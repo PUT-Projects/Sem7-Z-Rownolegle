@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <omp.h>
 
-#define ARRAY_WORDS 32
+#define ARRAY_WORDS 64
 #define PAIRS       (ARRAY_WORDS - 1)
 #define ALIGNMENT   128                 /* wyrównanie początku tablicy do brzegu linii pp */
 
