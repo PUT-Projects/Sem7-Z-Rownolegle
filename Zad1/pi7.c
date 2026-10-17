@@ -51,7 +51,7 @@ void estimate_line_size(const double* t, int count)
 		return;
 	}
 
-	double threshold = (tmin + tmax) / 2.0;
+	double threshold = tmin * 1.5;   /* progiem jest 1.5 * tmin */
 	int first = -1, last = -1, fast = 0;
 	for (int i = 0; i < count; i++)
 	{
