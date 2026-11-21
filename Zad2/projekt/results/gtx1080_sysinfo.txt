@@ -1,0 +1,23 @@
+# 2026-11-21 09:19:48  host=gpu-6
+GPU 0: NVIDIA GeForce GTX 1080, CC 6.1, 20 SM x 128 rdzeni, 8105 MB global, shared/blok 49152 B, shared/SM 98304 B, max watkow/SM 2048
+        Current Power Limit                            : 180.00 W
+        Requested Power Limit                          : 180.00 W
+        Default Power Limit                            : 180.00 W
+        Min Power Limit                                : 90.00 W
+        Max Power Limit                                : 217.00 W
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+        SM                                             : 885 MHz
+    Max Clocks
+        SM                                             : 1911 MHz
+    SM Clock Samples
+CPU(s):                                  12
+Model name:                              Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz
+Thread(s) per core:                      2
+Core(s) per socket:                      6
+Socket(s):                               1
+CPU(s) scaling MHz:                      81%
+CPU max MHz:                             4600.0000

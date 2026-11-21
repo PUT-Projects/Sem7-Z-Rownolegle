@@ -112,13 +112,14 @@
     },
     {
       "label": "Remote: upload to polluks",
-      "detail": "Copies Makefile and cuda_pliki to ~/Zad2 (home is NFS-shared with gpu/gpu1). No editor needs to be open.",
+      "detail": "Copies Makefile, cuda_pliki and projekt to ~/Zad2 (home is NFS-shared with gpu/gpu1). No editor needs to be open.",
       "type": "process",
       "command": "scp",
       "args": [
         "-r",
         "${workspaceFolder}\\Makefile",
         "${workspaceFolder}\\cuda_pliki",
+        "${workspaceFolder}\\projekt",
         "polluks:~/Zad2/"
       ],
       "dependsOn": "Remote: mkdir ~/Zad2 on polluks",
@@ -139,6 +140,28 @@
       "problemMatcher": []
     },
     {
+      "label": "Remote: experiments on GTX 1080",
+      "detail": "Upload, build projekt/stencil.cu (sm_61), run projekt/run_experiments.sh <args> on gpu/gpu1, then download results",
+      "type": "process",
+      "command": "ssh",
+      "args": [
+        "-t",
+        "${input:labHost}",
+        "cd ~/Zad2 && make SRC=projekt/stencil.cu ARCH=sm_61 && chmod +x projekt/run_experiments.sh && projekt/run_experiments.sh ${input:expArgs}"
+      ],
+      "dependsOn": "Remote: upload to polluks",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Remote: download GTX 1080 results",
+      "detail": "Copies ~/Zad2/projekt/results/gtx1080_* to projekt\\results",
+      "type": "process",
+      "command": "scp",
+      "args": ["polluks:~/Zad2/projekt/results/gtx1080_*", "${workspaceFolder}\\projekt\\results\\"],
+      "problemMatcher": []
+    },
+    {
       "label": "Remote: deviceQuery-style info (nvidia-smi)",
       "type": "process",
       "command": "ssh",
@@ -150,7 +173,7 @@
     {
       "id": "runArgs",
       "type": "promptString",
-      "description": "Program arguments (kernel.cu: N threads blocks; matrixMul.cu: e.g. -wA=320 -hA=320 -wB=320 -hB=320)",
+      "description": "Program arguments (stencil.cu: e.g. -N=4096 -R=8 -BS=32 -mode=all; kernel.cu: N threads blocks)",
       "default": ""
     },
     {
@@ -164,7 +187,13 @@
       "id": "remoteSrc",
       "type": "promptString",
       "description": "Source path relative to ~/Zad2 on the server",
-      "default": "cuda_pliki/matrixMul.cu"
+      "default": "projekt/stencil.cu"
+    },
+    {
+      "id": "expArgs",
+      "type": "promptString",
+      "description": "run_experiments.sh arguments: nstab | main <N...> | all <N...>",
+      "default": "nstab"
     }
   ]
 }

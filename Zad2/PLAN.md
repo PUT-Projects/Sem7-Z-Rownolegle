@@ -96,7 +96,9 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
 - [ ] A9. `README.md` w `projekt/` z instrukcją kompilacji i uruchamiania (wymagane w zip).
 
 ### B. Infrastruktura
-- [ ] B1. Dopisać upload katalogu `projekt/` do zadania „Remote: upload to polluks” w `.vscode/tasks.json`.
+- [x] B1. `.vscode/tasks.json`: upload obejmuje `projekt/`; nowe zadania „Remote: experiments on GTX 1080” (make + run_experiments.sh
+      z argumentami, domyślnie `nstab`) i „Remote: download GTX 1080 results” (scp `gtx1080_*` → `projekt/results`).
+      Z terminala: `ssh gpu1 'cd ~/Zad2 && make SRC=projekt/stencil.cu ARCH=sm_61 && projekt/run_experiments.sh nstab'`.
 - [x] B2. `projekt/run_experiments.sh nstab|main|all [N...]` (bash; lokalnie przez Git Bash, w labie na gpu/gpu1).
       Zmienne: TAG (rtx4060/gtx1080 auto), BIN, DEV, R1=8, R2=36, REPS=10, NSTAB_N, OUTDIR. Zapisuje `<tag>_nstab.csv`,
       `<tag>_main.csv`, `<tag>_*_power.csv` (nvidia-smi co 200 ms), `<tag>_sysinfo.txt`.
@@ -114,8 +116,15 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
         **R=8: N_stab = 768** (707 GFLOP/s, plateau ~716–730); **R=36: N_stab = 640** (865, plateau ~907).
         Przy progu 2% oba wychodzą 1024. Interpretacja: 24 SM, BS=32 → 1 blok (1024 wątki) na SM naraz (limit 1536 wątków/SM);
         małe N = mniej bloków niż SM / mało fal → niewykorzystane SM i efekt ostatniej fali (R=36: N=128 i 192 ten sam czas – 1 fala).
-  - [ ] GTX 1080 (lab): `projekt/run_experiments.sh nstab`.
-  - Główny eksperyment (C2) robić dla N wyraźnie > max N_stab obu kart, np. `main 4096 8192` (do ustalenia po labie).
+  - [x] GTX 1080 (gpu1 = gpu-6, GPU 0, 2026-11-21) – `results/gtx1080_nstab.{csv,md}`:
+        **R=8: N_stab = 640** (800 GFLOP/s, plateau ~830); **R=36: N_stab = 512** (1045, plateau ~1090).
+        20 SM, 2048 wątków/SM → 2 bloki 32×32 na SM naraz (R=36: 2×43 KB ≤ 96 KB shared/SM) → 40 bloków na falę.
+        GPU pracuje na limicie mocy: śr. 174 W (maks. 187 W) przy limicie 180 W, zegar SM ~1843 MHz (maks. 1911).
+  - **max N_stab (obie karty) = 768** → główny eksperyment (C2) dla N ≥ 768; propozycja `main 4096 8192`.
+- Obserwacja GTX 1080 (N=1024, R=36, BS=32): v0 481, **v1 1089**, v2 75 GFLOP/s; CPU i7-8700 (12 wątków, gcc -march=native) 232.
+  Na Pascalu v1 jest 2,3× szybszy od v0 (odczyty globalne domyślnie nie są cache'owane w L1, tylko L2), na Adzie v1 ≈ v0.
+- Lab: Makefile wybiera CUDA **12.9** (`/usr/local/cuda-12.9`), nie 12.5 – podać w sprawozdaniu. Wszystkie 40 testów poprawności
+  (BS 16/32 × 10 konfiguracji × random/uniform) OK na GTX 1080.
 - [ ] C2. Dla N ≥ max(N_stab): CPU f(R,N), GPU wariant 1 f(BS,R,N), GPU wariant 2 f(BS,R,N).
 - [ ] C3. Energia CPU vs GPU, CGMA, przyspieszenie GPU/CPU oraz wariant1/wariant2.
 
