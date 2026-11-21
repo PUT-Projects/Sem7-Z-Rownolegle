@@ -1,0 +1,51 @@
+Uwagi użytkowe systemu GPU udostępnianego dla zajęć z PR dla studentów Informatyki w roku ak. 2024/25
+
+
+DOSTĘP DO SYSTEMU I PLIKI:
+
+Dostęp do maszyny z karta GPU odbywa się za pośrednictwem komputera polluks i konta studenckiego w systemie Instytutu Informatyki PP - tj. po zalogowaniu na polluks można przejść na maszynę z GPU wpisując:
+--logowanie
+PowerShell lub  puTTY polluks.cs.put.poznan.pl // windows
+ssh inf??????@polluks.cs.put.poznan.pl //linux
+
+ssh gpu (dane logowania takie same jak na polluks) //logowanie z polluksa na komputer gpu lub komputer 
+gpu1 (do wyboru - jednakowe konfiguracje z 2 kartami))
+
+Katalog domowy jest podmontowany po NFS-ie, więc nie ma potrzeby 
+kopiowania plików z polluksa na maszynę z gpu(gpu1).
+
+-przenoszenie plików do systemu  uruchomieniowego - komputer  polluks
+WinSCP 
+lub  scp plik uzytkownik@polluks.cs.put.poznan.pl:/home/uzytkownik/katalog_docelowy
+
+DOSTĘPNE KARTY I OPROGRAMOWANIE
+Na GPU dostępne są karty GPU o architekturze Pascal:
+ "NVIDIA GeForce GTX 1080" - 2 sztuki 
+  CUDA Driver Version / Runtime Version          12.2 / 12.5
+  CUDA Capability Major/Minor version number:    6.1
+Zainstalowana wersja systemu CUDA: 12.5
+
+KOMPILACJA I URUCHAMIANIE
+
+Kompilacja pliku kod_z.cu z plikiem wynikowym kompilacji w pliku run katologu lokalnego dla karty GTX 1080 (architektura Pascal), Compute Capability 6.1.:
+nvcc -arch=sm_61 -I. kod_z.cu -o run
+
+Proszę dostosować do potrzeb i użyc udostępniony plik Makefile (jeśli konieczne).
+Kompilacja przy użyciu standardowego pliku Makefile pozwala na dostęp do narzędzi zainstalowanych i plików pomocniczych dostępnych w standardowych aplikacjach przykładowych 
+
+Uruchomienie przetwarzania na GPU odbywa się poprzez wskazanie ścieżki i nazwy pliku zawierającego skom[ilowany kod
+np. ./kernel
+Proszę korzystać z udostępnionych plików przykładowych. 
+
+PLIKI POMOCNICZE
+W ramach dokumentacji udostępnianego środowiska dostępne są :
+1. plik źródłowy prostego kodu kernela uzytego do pomiaru czasu przetwarzania na GPU.
+2. plik zawierający informacje o kartach GPU dostępnych w komputerze (wybór karty w kodzie za pomocą funkcji cudaSetDevice() - z parametrem 0 lub 1)
+3. plik Makefile_kernel pozwalający na skompilowanie kodu przykładowego o nazwie kernel.cu
+4. pliki aplikacji mnożenia macierzy matrixMul (z przykładów firmy NVIDIA), która ma zostać zmodyfikowana przez 
+studentów w celu wypełnienia  wymagań przygotowywanego projektu.
+5. pliki z wykładami z zakresu GPU w ramach kursu przedmiotu.
+
+
+
+

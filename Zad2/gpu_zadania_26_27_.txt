@@ -1,0 +1,28 @@
+Etapy pracy nad projektem GPU- laboratorium PR studia niestacjonarne 26/27
+- do wykonania częściowo na zajęciach, częściowo poza zajęciami.
+
+1. zalogowanie się w systemie polluks.cs.put.poznan.pl
+2. skopiowanie na polluks plików cuda_pomoc.zip, rozpakowanie plików
+3. zalogowanie się w systemie gpu
+4. kompilacja przykładowych kodów
+5. uruchomienie przykładowych kodów
+6. zrozumienie zawartości plików źródłowych *.cu kodów
+6a. określenie składu grup projektowych 
+7. przygotowanie kodu z deklaracją tablic (wejściowa i wyjściowa, por. przykładowe kody), tablica to ciągły obszar danych określony przez adres początkowy 
+i liczbę słów tablicy, zaincjowanie  zawartości tablicy wejściowej, typ słów:  float
+8. przygotowanie kodu obliczającego wynik zgodnie z treścią zadania w sposób równoległy (OpenMP) na CPU 
+9. testowanie poprawności wyników obliczeń dla jednorodnych wartości w tablicy (uwzględnienie problemu zaokrągleń podczas dodawania) dla różnych parametrów wielkości tablicy i parametru problemu R
+10. przygotowanie kodu kernela0 z  przesyłaniem danych wejściowych i wyjściowych obliczeń  między pamięcią operacyjną a pamięcią globalną karty.
+13. Wersja kernela A uzupełninie kodu kernela0  o obliczenia przy użyciu pamięci  współdzielonej - wersja z efektywnymi dostępami  z parametrami R
+13a. testy poprawnościowe kodu z pkt 13 dla danych niejednorodnych (porównanie wersji OpenMP i CUDA)
+14. Wersja kernela B uzupełninie kodu kernela0  o obliczenia przy użyciu pamięci  współdzielonej - wersja z nieefektywnymi dostępami  z parametrami R
+14a. testy poprawnościowe  kodu z pkt 14 dla danych niejednorodnych (porównanie wersji OpenMP i CUDA)
+15. Testy efektywnościowe przygotowanych rozwiązań dla parametrów określonych w opisie projektu, dobór wielkości parametrów pozwalający na uwidocznienie dostępnej efektywności przetwarzania  
+16. Przygotowanie sprawozdania zgodnie z wymaganiami z opisu projektu.
+17. Przesłanie sprawozdania do systemu ekursy.
+18. Przygotowanie  prezentacji na zajęcia zaliczeniowe (20 minut)  uwzględniającej:
+- omówienie postaci przygotowanych wariantów kodów,
+- wyników testów poprawności kodów,
+- użytych konfiguracji uruchomienia zależnych od wielkości macierzy, bloku wątków i R,
+- wyjaśnienia jakości rodzajów dostępów do typów pamięci i związane z tym prędkości przetwarzania podane w liczbie operacji arytmetycznych na sekundę. 
+   
