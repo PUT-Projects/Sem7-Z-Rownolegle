@@ -93,7 +93,7 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
   Obserwacja: v1 ≈ v0 – na Ada L1 i shared to ta sama pamięć, a v1 robi 1 odczyt shared na 1 FLOP (ograniczenie przepustowości LDS).
   Do rozważenia (opcjonalnie): ponowne użycie danych w rejestrach (np. kilka wyników na wątek / sumy wierszy) – ale zmienia to
   „czystość” porównania wariantów; najpierw przedyskutować.
-- [ ] A9. `README.md` w `projekt/` z instrukcją kompilacji i uruchamiania (wymagane w zip).
+- [x] A9. `projekt/README.md` – pliki, kompilacja (Linux/make, Windows/nvcc), parametry, testy, eksperymenty, skrypty.
 
 ### B. Infrastruktura
 - [x] B1. `.vscode/tasks.json`: upload obejmuje `projekt/`; nowe zadania „Remote: experiments on GTX 1080” (make + run_experiments.sh
@@ -195,14 +195,15 @@ Schematy: maks. 48 komórek w poziomie (dla T > 48 pokazany początek kafla, z a
       (CPU / v1 / v2 dla (R,BS), obie karty). Do dodania później: wykres energii (po ustaleniu wzorów, C3).
 
 ### E. Sprawozdanie (`projekt/sprawozdanie.md` → PDF)
-- [ ] E1. Szkielet sekcji (zrobione – uzupełniać).
-- [ ] E2. Opis systemów, opis kodu z listingami, rysunki z kodem, konfiguracja uruchomienia, wzory.
-- [ ] E3. Tabele wyników, wnioski. Numeracja i podpisy listingów/rysunków/tabel.
+- [x] E1. Szkielet sekcji.
+- [x] E2. Opis systemów (tab. 1–2, parametry z cudaGetDeviceProperties), kod (listingi 1–4), rysunki 1–16 z analizą, konfiguracja, wzory.
+- [x] E3. Tabele 6–12, rysunki 17–21, wnioski (model przepustowości shared: v1 GTX 94% limitu, v2 = limit/stopień konfliktu).
+      Do uzupełnienia: data oddania (TODO w nagłówku).
 - [ ] E4. Eksport do PDF, zip z kodem.
 
 ### F. Prezentacja (~15 min)
 - [ ] F1. Krótkie slajdy / ściąga do omówienia wariantów i wyników.
 
 ## Otwarte pytania
-- Autor: Mateusz Chlebosz, 151817. Możliwy drugi członek – w sprawozdaniu zostawione pole TODO; przy oddaniu nazwy plików `151817[_NR2].zip/.pdf`.
+- Autorzy: Mateusz Chlebosz, 151817 i Wojciech Durczak, 161609 → pliki do oddania `151817_161609.zip` / `151817_161609.pdf`.
 - ~~CPU gpu vs gpu1~~ – ustalone: gpu1 = `gpu-6`, gpu = `gpu-5`; przyjmujemy i7-8700 dla obu. Pomiary preferencyjnie na gpu1.

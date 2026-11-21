@@ -86,7 +86,7 @@ static void printDeviceInfo(int dev) {
 
 // Pomiar: zdarzenia CUDA (cudaEvent) zapisane w strumieniu przed i po kernelu – mierza
 // czas wykonania na GPU niezaleznie od asynchronicznego uruchamiania. Transfery
-// CPU<->GPU sa poza pomiarem. 1 uruchomienie rozgrzewkowe + reps mierzonych.
+// CPU<->GPU sa poza pomiarem. Rozgrzewka (>= p.warmup_ms) + reps mierzonych uruchomien.
 static bool runGPU(int variant, const float *d_in, float *d_out, std::vector<float> &out,
                    const Params &p, TimingStats &ts, LaunchCfg &cfg) {
     cfg = makeCfg(variant, p);
