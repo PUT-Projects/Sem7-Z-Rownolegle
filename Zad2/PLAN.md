@@ -125,7 +125,48 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
   Na Pascalu v1 jest 2,3× szybszy od v0 (odczyty globalne domyślnie nie są cache'owane w L1, tylko L2), na Adzie v1 ≈ v0.
 - Lab: Makefile wybiera CUDA **12.9** (`/usr/local/cuda-12.9`), nie 12.5 – podać w sprawozdaniu. Wszystkie 40 testów poprawności
   (BS 16/32 × 10 konfiguracji × random/uniform) OK na GTX 1080.
-- [ ] C2. Dla N ≥ max(N_stab): CPU f(R,N), GPU wariant 1 f(BS,R,N), GPU wariant 2 f(BS,R,N).
+- [x] C2. `run_experiments.sh main 4096 8192` na obu kartach (2026-11-21) → `results/{gtx1080,rtx4060}_main.csv` (+ `_power.csv`).
+      Wszystkie porównania GPU–CPU OK (błąd 0). GFLOP/s (mediana 10 powt., rozgrzewka 1 s):
+
+      **Wersja ostateczna** (po zmianie CPU na `schedule(dynamic, 4)`, OneDrive wyłączony, oba przebiegi 2026-11-21):
+
+      | karta | N | R | BS | CPU | v1 | v2 | v1/CPU | v1/v2 |
+      |---|---|---|---|---|---|---|---|---|
+      | GTX 1080 | 4096 | 8  | 16 | 209 | 861  | 75  | 4.1× | 11.4× |
+      | GTX 1080 | 4096 | 8  | 32 | 209 | 811  | 38  | 3.9× | 21.5× |
+      | GTX 1080 | 4096 | 36 | 16 | 245 | 1005 | 75  | 4.1× | 13.4× |
+      | GTX 1080 | 4096 | 36 | 32 | 244 | 1109 | 75  | 4.5× | 14.7× |
+      | GTX 1080 | 8192 | 8  | 16 | 201 | 847  | 74  | 4.2× | 11.4× |
+      | GTX 1080 | 8192 | 8  | 32 | 201 | 825  | 37  | 4.1× | 22.2× |
+      | GTX 1080 | 8192 | 36 | 16 | 244 | 964  | 74  | 4.0× | 13.0× |
+      | GTX 1080 | 8192 | 36 | 32 | 244 | 1095 | 75  | 4.5× | 14.7× |
+      | RTX 4060 | 4096 | 8  | 16 | 166 | 814  | 115 | 4.9× | 7.1×  |
+      | RTX 4060 | 4096 | 8  | 32 | 172 | 713  | 58  | 4.1× | 12.2× |
+      | RTX 4060 | 4096 | 36 | 16 | 160 | 911  | 117 | 5.7× | 7.8×  |
+      | RTX 4060 | 4096 | 36 | 32 | 152 | 905  | 118 | 5.9× | 7.7×  |
+      | RTX 4060 | 8192 | 8  | 16 | 159 | 815  | 115 | 5.1× | 7.1×  |
+      | RTX 4060 | 8192 | 8  | 32 | 162 | 716  | 58  | 4.4× | 12.3× |
+      | RTX 4060 | 8192 | 36 | 16 | 157 | 912  | 117 | 5.8× | 7.8×  |
+      | RTX 4060 | 8192 | 36 | 32 | 158 | 907  | 118 | 5.7× | 7.7×  |
+
+      **CPU na laptopie – `schedule(static)` → `schedule(dynamic, 4)`**: przy static ok. 1/6 uruchomień było dokładnie 2× wolniejsze
+      (~75 GFLOP/s zamiast ~150; wszystkie powtórzenia w procesie, także min) – niezależnie od OneDrive i od wcześniejszego obciążenia GPU
+      (test: zdarzało się po kilku przebiegach samego CPU). Wyjaśnienie: Windows czasem stawia 2 wątki na jednym rdzeniu, a przy
+      podziale statycznym wszyscy czekają na najwolniejszego. Dynamic: 12/12 uruchomień 164–176, brak spadków; w labie bez zmian (195–198).
+      **Throttling CPU+GPU (wspólny budżet mocy laptopa) – sprawdzony, brak wpływu**: CPU i GPU nie liczą jednocześnie (w jednym procesie
+      kolejno: CPU, potem v1, potem v2). Pomiary osobno po 60 s spoczynku: CPU 163 / 167 (w serii 157 / 166), GPU v1 912.6 / 814,
+      v2 114.8 (w serii 912 / 814 / 115) – różnice w granicach rozrzutu.
+      Kod podzielony na `common.h`, `cpu_ref.h`, `kernels.cuh`, `stencil.cu` (kompilowany jest tylko stencil.cu); Makefile
+      przebudowuje też po zmianie nagłówków w katalogu źródła.
+
+      Poprzednia wersja tabeli (static, z zakłóceniami) zastąpiona – patrz historia git.
+
+      Uwagi do wniosków: v2 przy R=8, BS=32 dwa razy wolniejszy niż przy BS=16 (konflikt 32-way vs 16-way) – na R=36 oba 16-way
+      i v2 jednakowe. v1: BS=32 lepszy przy R=36 na GTX 1080 (mniejszy narzut halo: (T/BS)² = 3.3 vs 5.5), przy R=8 BS=16 ≥ BS=32.
+      CPU (laptop) ma duży rozrzut; punkt N=4096 R=36 BS=16 dał raz 76 GFLOP/s (zakłócenie w tle – repo w OneDrive synchronizuje
+      wyniki), po powtórzeniu 150 – wiersze tego punktu w `rtx4060_main.csv` podmienione na powtórzony pomiar.
+      Pobór mocy: GTX 1080 śr. ~172 W (limit 180 W), SM ~1830 MHz; RTX 4060 pod obciążeniem ~37–76 W. **nvidia-smi na laptopie
+      czasem zwraca 590.01 W przy zegarze 1890 MHz – to błędny odczyt, odfiltrować (>200 W) przy analizie.**
 - [ ] C3. Energia CPU vs GPU, CGMA, przyspieszenie GPU/CPU oraz wariant1/wariant2.
 
 ### D. Rysunki (`images/`) – KLUCZOWY PUNKT

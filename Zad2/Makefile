@@ -35,7 +35,7 @@ INCLUDES := -Icuda_pliki -I$(dir $(SRC))
 .PHONY: all run archs clean
 all: $(OUT)
 
-$(OUT): $(SRC) $(wildcard cuda_pliki/*.h) | build
+$(OUT): $(SRC) $(wildcard cuda_pliki/*.h $(dir $(SRC))*.h $(dir $(SRC))*.cuh) | build
 	$(NVCC) $(NVCCFLAGS) $(GENCODE) $(INCLUDES) $< -o $@
 
 build:
