@@ -1,0 +1,3 @@
+# Skrypty uruchamiane w labie (Linux) musza miec konce linii LF
+*.sh text eol=lf
+Makefile text eol=lf
