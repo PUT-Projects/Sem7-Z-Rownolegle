@@ -1,0 +1,29 @@
+{
+  // Host-side debugging (breakpoints in main / CPU code) with the MSVC debugger.
+  // Needs the "C/C++" extension (ms-vscode.cpptools).
+  // Kernel (device) debugging isn't available in VS Code on Windows - use printf in kernels
+  // and the compute-sanitizer tasks instead.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CUDA: debug active file (host)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build\\${fileBasenameNoExtension}_dbg.exe",
+      "args": [],
+      "cwd": "${fileDirname}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "CUDA: build RTX 4060 (debug)"
+    },
+    {
+      "name": "CUDA: run release build",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build\\${fileBasenameNoExtension}.exe",
+      "args": [],
+      "cwd": "${fileDirname}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "CUDA: build RTX 4060 (release)"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 #include "device_launch_parameters.h"
 #include <time.h>
 #include <stdio.h>
+#include <vector>
 
 
 #define BS 16
@@ -48,16 +49,12 @@ int main(int argc, char *argv[])
     int blocks  = atoi(argv[3]);
 
     const int arraySize = N;
-     int a[arraySize];
-     int b[arraySize];  
-    for (int i = 0; i < arraySize; i++) a[i] = 1;//i;
-    for (int i = 0; i < arraySize; i++) b[i] = 1;//i;
-
-    int c[arraySize] = { 0};
-    
+    std::vector<int> a(arraySize, 1);
+    std::vector<int> b(arraySize, 1);
+    std::vector<int> c(arraySize, 0);
 
     // Add vectors in parallel.
-    cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize,blocks,threads );
+    cudaError_t cudaStatus = addWithCuda(c.data(), a.data(), b.data(), arraySize, blocks, threads);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "addWithCuda failed!");
         return 1;
@@ -88,7 +85,7 @@ cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size, i
  //   clock_t startt, stopt;
     float msecTotal = 0.0f;
  //   double gigaFlops = 0;
-    
+
     cudaStatus = cudaSetDevice(0);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
@@ -124,13 +121,13 @@ cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size, i
         fprintf(stderr, "cudaMemcpy failed!");
         goto Error;
     }
-    
+
      cudaStatus = cudaMemcpy(dev_c, c, size * sizeof(int), cudaMemcpyHostToDevice);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemcpy failed!");
         goto Error;
     }
-    
+
     cudaStatus = cudaEventCreate(&start);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaEventCreate failed!");
@@ -147,30 +144,30 @@ cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size, i
         fprintf(stderr, "cudaEventRecord failed");
         goto Error;
     }
- 
+
     addKernel<<<blocks, threads>>>(dev_c, dev_a, dev_b);
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
         goto Error;
     }
-       
+
     cudaStatus = cudaEventRecord(stop, 0);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaEventRecord failed");
         goto Error;
     }
-   
+
     cudaStatus = cudaEventSynchronize(stop);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaEventSynchronize(stop) failed");
         goto Error;
     }
-    
+
     cudaEventElapsedTime(&msecTotal, start, stop);
       printf(
         "Time= %.3f msec \n",msecTotal);
-   
+
     cudaStatus = cudaMemcpy(c, dev_c, size * sizeof(int), cudaMemcpyDeviceToHost);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemcpy failed!");
@@ -181,6 +178,6 @@ Error:
     cudaFree(dev_c);
     cudaFree(dev_a);
     cudaFree(dev_b);
-    
+
     return cudaStatus;
 }

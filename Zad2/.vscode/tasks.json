@@ -1,0 +1,167 @@
+{
+  // CUDA build/run tasks for Zad2 (open the Zad2 folder in VS Code).
+  //
+  // Two targets:
+  //   LOCAL  - RTX 4060 (sm_89), CUDA 13.5 on this PC. Builds the ACTIVE .cu file into build\<name>.exe.
+  //   REMOTE - GTX 1080 (sm_61), CUDA 12.5 on lab machines gpu/gpu1 via polluks, using ../Makefile.
+  //            Needs host aliases "polluks" and "gpu"/"gpu1" (ProxyJump polluks) in ~/.ssh/config.
+  //            The server build is a fat binary (sm_61 + sm_89 + compute_89 PTX), so it runs on both cards.
+  //
+  // CUDA 13.x cannot compile for sm_61 (minimum is sm_75) - that's why the GTX 1080 build is remote.
+  // If CUDA is installed elsewhere, search/replace "CUDA\\v13.5" below.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CUDA: mkdir build",
+      "type": "shell",
+      "command": "if not exist \"${workspaceFolder}\\build\" mkdir \"${workspaceFolder}\\build\"",
+      "options": { "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] } },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "CUDA: build RTX 4060 (release)",
+      "detail": "CUDA 13.5 | sm_89 SASS + compute_89 PTX | -O3",
+      "type": "process",
+      "command": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.5\\bin\\nvcc.exe",
+      "args": [
+        "-gencode=arch=compute_89,code=sm_89",
+        "-gencode=arch=compute_89,code=compute_89",
+        "-O3",
+        "-lineinfo",
+        "-Xcompiler", "/openmp",
+        "-Xcompiler", "/utf-8",
+        "-I", "cuda_pliki",
+        "-I", "${relativeFileDirname}",
+        "${relativeFile}",
+        "-o", "build\\${fileBasenameNoExtension}.exe"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "dependsOn": "CUDA: mkdir build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$nvcc"
+    },
+    {
+      "label": "CUDA: build RTX 4060 (debug)",
+      "detail": "CUDA 13.5 | sm_89 | -G -g device debug (slow)",
+      "type": "process",
+      "command": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.5\\bin\\nvcc.exe",
+      "args": [
+        "-arch=sm_89",
+        "-G", "-g",
+        "-Xcompiler", "/openmp",
+        "-Xcompiler", "/utf-8",
+        "-Xcompiler", "/Zi",
+        "-I", "cuda_pliki",
+        "-I", "${relativeFileDirname}",
+        "${relativeFile}",
+        "-o", "build\\${fileBasenameNoExtension}_dbg.exe"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "dependsOn": "CUDA: mkdir build",
+      "group": "build",
+      "problemMatcher": "$nvcc"
+    },
+    {
+      "label": "CUDA: build + run (RTX 4060)",
+      "detail": "Release build, then run with the arguments you type",
+      "type": "shell",
+      "command": "\"${workspaceFolder}\\build\\${fileBasenameNoExtension}.exe\" ${input:runArgs}",
+      "options": { "cwd": "${fileDirname}", "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] } },
+      "dependsOn": "CUDA: build RTX 4060 (release)",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "CUDA: compute-sanitizer memcheck",
+      "detail": "Debug build, then check for out-of-bounds / misaligned accesses",
+      "type": "shell",
+      "command": "\"C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.5\\bin\\compute-sanitizer.bat\" --tool memcheck \"${workspaceFolder}\\build\\${fileBasenameNoExtension}_dbg.exe\" ${input:runArgs}",
+      "options": { "cwd": "${fileDirname}", "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] } },
+      "dependsOn": "CUDA: build RTX 4060 (debug)",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "CUDA: compute-sanitizer racecheck",
+      "detail": "Debug build, then check for shared-memory data races (kernel A/B)",
+      "type": "shell",
+      "command": "\"C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.5\\bin\\compute-sanitizer.bat\" --tool racecheck \"${workspaceFolder}\\build\\${fileBasenameNoExtension}_dbg.exe\" ${input:runArgs}",
+      "options": { "cwd": "${fileDirname}", "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] } },
+      "dependsOn": "CUDA: build RTX 4060 (debug)",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "CUDA: show embedded archs (cuobjdump)",
+      "detail": "List cubins / PTX inside build\\<name>.exe",
+      "type": "process",
+      "command": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.5\\bin\\cuobjdump.exe",
+      "args": ["--list-elf", "--list-ptx", "${workspaceFolder}\\build\\${fileBasenameNoExtension}.exe"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Remote: mkdir ~/Zad2 on polluks",
+      "type": "process",
+      "command": "ssh",
+      "args": ["polluks", "mkdir -p ~/Zad2"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Remote: upload to polluks",
+      "detail": "Copies Makefile and cuda_pliki to ~/Zad2 (home is NFS-shared with gpu/gpu1). No editor needs to be open.",
+      "type": "process",
+      "command": "scp",
+      "args": [
+        "-r",
+        "${workspaceFolder}\\Makefile",
+        "${workspaceFolder}\\cuda_pliki",
+        "polluks:~/Zad2/"
+      ],
+      "dependsOn": "Remote: mkdir ~/Zad2 on polluks",
+      "problemMatcher": []
+    },
+    {
+      "label": "Remote: build + run on GTX 1080",
+      "detail": "Upload, then make (sm_61 + sm_89 fat binary) + run on gpu/gpu1 via polluks",
+      "type": "process",
+      "command": "ssh",
+      "args": [
+        "-t",
+        "${input:labHost}",
+        "cd ~/Zad2 && make SRC=${input:remoteSrc} && ./build/$(basename ${input:remoteSrc} .cu) ${input:runArgs}"
+      ],
+      "dependsOn": "Remote: upload to polluks",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Remote: deviceQuery-style info (nvidia-smi)",
+      "type": "process",
+      "command": "ssh",
+      "args": ["${input:labHost}", "nvidia-smi && nvcc --version"],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "runArgs",
+      "type": "promptString",
+      "description": "Program arguments (kernel.cu: N threads blocks; matrixMul.cu: e.g. -wA=320 -hA=320 -wB=320 -hB=320)",
+      "default": ""
+    },
+    {
+      "id": "labHost",
+      "type": "pickString",
+      "description": "GPU machine (ProxyJump via polluks, see ~/.ssh/config)",
+      "options": ["gpu1", "gpu"],
+      "default": "gpu1"
+    },
+    {
+      "id": "remoteSrc",
+      "type": "promptString",
+      "description": "Source path relative to ~/Zad2 on the server",
+      "default": "cuda_pliki/matrixMul.cu"
+    }
+  ]
+}
