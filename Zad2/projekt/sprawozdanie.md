@@ -4,7 +4,7 @@
 
 **Autorzy:**
 - Mateusz Chlebosz, 151817
-- TODO (imię nazwisko, nr indeksu – drugi członek grupy, jeśli dołączy)
+- Durczak Wojciech, 161609
 **Data oddania:** TODO
 
 ---
