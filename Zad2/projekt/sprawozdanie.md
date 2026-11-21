@@ -13,6 +13,7 @@
 
 ## Spis treści
 
+0. Słownik oznaczeń i skrótów
 1. Opis systemów użytych w eksperymencie
 2. Zakres zrealizowanego zadania
 3. Realizacja projektu (kod CPU, konfiguracja uruchomienia, warianty kerneli, analiza dostępów do pamięci)
@@ -21,6 +22,99 @@
 
 Wszystkie listingi, rysunki i tabele są numerowane. Rysunki znajdują się w katalogu `images/`, surowe wyniki w `results/`,
 kod w plikach `common.h`, `cpu_ref.h`, `kernels.cuh`, `stencil.cu`.
+
+---
+
+## 0. Słownik oznaczeń i skrótów
+
+### 0.1. Oznaczenia zadania
+
+| oznaczenie | znaczenie |
+|---|---|
+| **TAB** | tablica wejściowa N×N liczb `float` |
+| **OUT** | tablica wynikowa M×M; `OUT[i][j]` = suma elementów TAB w kwadratowym oknie (2R+1)×(2R+1) |
+| **N** | rozmiar tablicy wejściowej (liczba wierszy i kolumn TAB) – „wielkość instancji” |
+| **R** | promień okna: okno sięga R elementów w każdą stronę od elementu środkowego |
+| **2R** | łączna szerokość ramki: o tyle tablica wynikowa jest mniejsza od wejściowej w każdym wymiarze (po R z każdej strony – dla brzegowych elementów okno nie zmieściłoby się w TAB) |
+| **K = 2R+1** | bok okna; okno zawiera K² elementów, więc jeden wynik wymaga K² − 1 dodawań |
+| **M = N − 2R** | rozmiar tablicy wynikowej OUT |
+| **R1, R2** | dwie wartości R użyte w eksperymencie: R1 = 8 (mniejsza od BS=32) i R2 = 36 (większa od BS=32) |
+| **u, v** | przesunięcie wewnątrz okna (wiersz, kolumna), u, v = 0…2R (w kodzie liczone od 0, czyli od lewego górnego rogu okna) |
+| **N_stab** | najmniejsze N, od którego dalsze zwiększanie N nie daje istotnego wzrostu wydajności (przyjęto: większe N nie daje więcej niż 5% wzrostu GFLOP/s); poniżej N_stab GPU nie jest w pełni wykorzystany |
+
+### 0.2. Oznaczenia kodu GPU
+
+| oznaczenie | znaczenie |
+|---|---|
+| **BS** | rozmiar bloku wątków (*block size*): blok ma BS×BS wątków; w projekcie BS = 16 (256 wątków) lub 32 (1024 wątki) |
+| **T = BS + 2R** | bok kafla – fragmentu TAB potrzebnego blokowi do policzenia BS×BS wyników (BS elementów + ramka R z każdej strony) |
+| **P** (*pitch*) | długość jednego wiersza kafla w pamięci współdzielonej (w słowach 4 B); P = T albo P > T, jeśli wiersz jest dopełniony |
+| **tx, ty** | współrzędne wątku w bloku (`threadIdx.x`, `threadIdx.y`) |
+| **bx, by** | współrzędne bloku w siatce (`blockIdx.x`, `blockIdx.y`) |
+| **i0, j0** | lewy górny róg fragmentu OUT (i kafla TAB) obsługiwanego przez blok: i0 = by·BS, j0 = bx·BS |
+| **t, idx** | liniowy numer wątku w bloku t = ty·BS + tx; `idx` – numer elementu kafla ładowanego przez wątek w danej iteracji pętli ładowania (idx = t, t + BS², t + 2·BS², …) |
+| **r, c** | wiersz i kolumna elementu w kaflu (0…T−1) |
+| **k** | numer iteracji pętli ładowania kafla |
+| **v0, v1, v2** (`gpu0`, `gpu1`, `gpu2`) | kernel kontrolny (tylko pamięć globalna), wariant 1 (efektywny), wariant 2 (nieefektywny) |
+| **SMEM_LIMIT** | stała w kodzie = 48 KB – maksymalny rozmiar pamięci współdzielonej bloku używany w projekcie |
+| **JB** | w kodzie CPU: długość fragmentu wiersza wyniku liczonego naraz przez wątek (64 elementy) |
+| **ε** (`FLT_EPSILON`) | epsilon maszynowy typu float (≈ 1,19·10⁻⁷) – podstawa tolerancji błędu przy porównaniu wyników |
+
+### 0.3. Skróty i pojęcia
+
+| skrót / pojęcie | znaczenie |
+|---|---|
+| **CPU** | *Central Processing Unit* – procesor ogólnego przeznaczenia komputera |
+| **GPU** | *Graphics Processing Unit* – procesor karty graficznej, tu używany do obliczeń ogólnego przeznaczenia |
+| **PKG** | procesor karty graficznej (polska nazwa GPU w nazwie przedmiotu) |
+| **CUDA** | platforma i model programowania kart NVIDIA (rozszerzenie C++ o kernele, `nvcc` – kompilator) |
+| **OpenMP** | standard programowania równoległego CPU przez dyrektywy kompilatora (`#pragma omp parallel for`) |
+| **kernel** | funkcja `__global__` wykonywana na GPU równolegle przez wiele wątków, uruchamiana z CPU składnią `<<<siatka, blok, pamięć>>>` |
+| **wątek** | najmniejsza jednostka wykonania; w projekcie jeden wątek GPU liczy jeden element OUT |
+| **blok** | grupa BS×BS wątków wykonywana na jednym SM; wątki bloku mogą współdzielić pamięć współdzieloną i synchronizować się (`__syncthreads()`) |
+| **siatka** (*grid*) | zbiór wszystkich bloków jednego uruchomienia kernela; tu ⌈M/BS⌉ × ⌈M/BS⌉ bloków |
+| **warp** | grupa 32 kolejnych wątków bloku wykonywana wspólnie (ta sama instrukcja w tym samym czasie); dostępy do pamięci są analizowane dla całego warpa |
+| **lane** | numer wątku w warpie (0–31) |
+| **SM** | *Streaming Multiprocessor* – multiprocesor GPU; wykonuje bloki, ma własne rdzenie CUDA, rejestry i pamięć współdzieloną (GTX 1080: 20 SM, RTX 4060 Laptop: 24 SM) |
+| **CC** | *Compute Capability* – wersja architektury GPU określająca jego możliwości i limity (GTX 1080: 6.1, RTX 4060: 8.9) |
+| **sm_61, sm_89** | docelowa architektura kompilacji `nvcc` odpowiadająca CC 6.1 i 8.9 |
+| **fala** (bloków) | zbiór bloków wykonywanych jednocześnie na wszystkich SM; siatka jest wykonywana w kolejnych falach |
+| **obsadzenie** (*occupancy*) | liczba wątków (bloków) aktywnych jednocześnie na SM w stosunku do maksimum; ograniczane przez limit wątków, bloków i pamięci współdzielonej na SM |
+| **pamięć globalna** | główna pamięć karty (GDDR, 8 GB), dostępna dla wszystkich wątków, duża i wolna; tu znajdują się TAB i OUT |
+| **pamięć współdzielona** (*shared memory*) | szybka pamięć na SM (do 48 KB na blok), wspólna dla wątków jednego bloku; tu przechowywany jest kafel |
+| **rejestry** | najszybsza, prywatna pamięć wątku (zmienne lokalne, np. akumulator `s`) |
+| **kafel** (*tile*) | fragment T×T tablicy TAB kopiowany przez blok do pamięci współdzielonej |
+| **ramka / halo** | dodatkowe R wierszy i kolumn kafla z każdej strony, potrzebne do policzenia wyników na brzegu bloku; sąsiednie bloki ładują je wielokrotnie |
+| **dopełnienie** (*padding*) | nieużywane słowa dodane na końcu wiersza kafla (P − T słów), aby zmienić rozkład danych na banki |
+| **łączenie dostępów** (*coalescing*) | sprzętowe łączenie odczytów wątków warpa z sąsiednich adresów w jak najmniejszą liczbę transakcji |
+| **sektor / linia** | jednostki transferu pamięci globalnej: sektor = 32 B (8 floatów), linia = 128 B (4 sektory); 32 floaty warpa z kolejnych adresów = 4 sektory |
+| **transakcja / żądanie** | żądanie (*request*) – jedna instrukcja odczytu wykonana przez warp; transakcje – sektory, które trzeba w tym celu pobrać |
+| **bank** | jeden z 32 modułów pamięci współdzielonej, każdy o szerokości 4 B; słowo o adresie `a` leży w banku `a mod 32`; różne banki mogą być czytane jednocześnie |
+| **konflikt banków** | sytuacja, gdy wątki warpa czytają różne słowa z tego samego banku – odczyt jest dzielony na kilka kolejnych przebiegów |
+| **stopień konfliktu (k-krotny)** | największa liczba różnych słów czytanych przez warp z jednego banku = liczba przebiegów odczytu |
+| **przebieg** (*wavefront*) | jeden cykl obsługi odczytu z pamięci współdzielonej; brak konfliktów = 1 przebieg na instrukcję warpa |
+| **L1, L2, L3** | kolejne poziomy pamięci podręcznej (*cache*) – mniejsze i szybsze bliżej rdzeni |
+| **SIMD, AVX2** | *Single Instruction, Multiple Data* – instrukcje wektorowe CPU; AVX2 przetwarza 8 floatów jedną instrukcją |
+| **YMM** | 256-bitowe rejestry wektorowe AVX/AVX2 (8 floatów) |
+| **FMA** | *fused multiply-add* – instrukcja liczenia a·b + c (w tym zadaniu nieużywana – są same dodawania) |
+| **SMT** | *Simultaneous Multithreading* – 2 wątki sprzętowe na rdzeń CPU |
+| **nvcc, gcc, MSVC** | kompilatory: CUDA (NVIDIA), C/C++ GNU (Linux), Microsoft Visual C++ (Windows) |
+| **GP104, AD107** | nazwy układów scalonych GPU kart GTX 1080 i RTX 4060 Laptop |
+| **Intel ARK** | oficjalna baza specyfikacji procesorów Intel (źródło wartości TDP) |
+| **FLOP** | *floating-point operation* – jedna operacja zmiennoprzecinkowa (tu: dodawanie) |
+| **FLOP/s, GFLOP/s, TFLOP/s** | wydajność – liczba operacji zmiennoprzecinkowych na sekundę (G = 10⁹, T = 10¹²) |
+| **GFLOP/J** | efektywność energetyczna – liczba operacji na jeden dżul energii |
+| **CGMA** | *Compute to Global Memory Access ratio* – liczba operacji zmiennoprzecinkowych przypadająca na jeden dostęp do pamięci globalnej (w kodzie źródłowym) |
+| **TDP** | *Thermal Design Power* – moc nominalna procesora podana przez producenta |
+| **TGP** | *Total Graphics Power* – moc nominalna karty graficznej (w laptopach zakres ustalany przez producenta laptopa) |
+| **P_nom, E** | moc nominalna układu [W] i szacunkowa energia obliczeń E = P_nom · t [J] |
+| **t, mediana** | czas obliczeń jednego wywołania; czas reprezentatywny = mediana z 10 pomiarów |
+| **rozgrzewka** | wielokrotne uruchamianie kernela (funkcji CPU) przez ≥ 1 s przed pomiarem, aby zegar układu ustabilizował się na wartości roboczej |
+| **cudaEvent** | mechanizm CUDA do pomiaru czasu na GPU (znaczniki czasu zapisywane w strumieniu przed i po kernelu) |
+| **ncu** (Nsight Compute) | profiler NVIDIA mierzący m.in. liczbę sektorów pamięci i konfliktów banków |
+| **compute-sanitizer** | narzędzie NVIDIA wykrywające błędne dostępy do pamięci (memcheck) i wyścigi w pamięci współdzielonej (racecheck) |
+| **GDDR5X, GDDR6** | typy pamięci graficznej (pamięć globalna kart) |
+| **Pascal, Ada Lovelace** | generacje (architektury) GPU NVIDIA: GTX 1080 i RTX 4060 |
 
 ---
 
