@@ -170,10 +170,19 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
 - [ ] C3. Energia CPU vs GPU, CGMA, przyspieszenie GPU/CPU oraz wariant1/wariant2.
 
 ### D. Rysunki (`images/`) – KLUCZOWY PUNKT
-- [ ] D1. Skrypt Python (matplotlib) generujący schematy dostępu: adresy czytane przez wątki warpa 0..31,
-      kolejność dostępów, transakcje 32/128 B – dla wariantu 1 i 2, BS=16/32, R1/R2.
-- [ ] D2. Schemat banków shared (nr banku, id wątku) – brak konfliktów vs konflikty, układ kafla w shared.
-- [ ] D3. Wykresy wyników (N_stab, porównania wariantów/BS/R, CPU vs GPU).
+Skrypty w `projekt/figures/` (matplotlib zainstalowany lokalnie przez `pip install --user matplotlib`); uruchamiać z katalogu Zad2:
+`python projekt/figures/access_patterns.py` i `python projekt/figures/results_plots.py` → `projekt/images/`.
+Rysunki mają fizyczną szerokość ~17–18 cm (strona A4) – wstawiać w 100% szerokości tekstu, czcionki 7.5–11.5 pt.
+Schematy: maks. 48 komórek w poziomie (dla T > 48 pokazany początek kafla, z adnotacją), układ paneli liczony w calach.
+- [x] D1. `access_patterns.py` → `projekt/images/global_v{1,2}_BS{16,32}_R{8,36}.png`: ładowanie kafla, warp 0 i 1, iteracja k=0,
+      lane w komórkach, granice sektorów 32 B / linii 128 B, liczba sektorów warpa i średnia w bloku. Indeksowanie 1:1 z kernels.cuh.
+      Model daje 4.00 sektora/żądanie (v1) i 32.00 (v2) – zgodne z ncu (3.98–3.99 / 31.8–32.0).
+- [x] D2. `access_patterns.py` → `projekt/images/shared_v{1,2}_BS{16,32}_R{8,36}.png`: lewy panel – układ wierszy shared (P słów,
+      dopełnienie kreskowane, numer banku w komórce, odczyty warpa 0 jako t<lane>/b<bank>), prawy – banki × przebiegi.
+      Stopień konfliktu z modelu: v1 = 1.00 wszędzie, v2 = 16 (BS16; BS32 R36) / 32 (BS32 R8) – zgodne z ncu.
+- [x] D3. `results_plots.py` → `nstab.png` (obie karty, R=8/36, N_stab zaznaczone), `nstab_rozgrzewka.png` (z/bez rozgrzewki),
+      `zegar_rtx4060.png` (zegar SM i moc w czasie – uzasadnienie rozgrzewki), `main_N4096.png`, `main_N8192.png`
+      (CPU / v1 / v2 dla (R,BS), obie karty). Do dodania później: wykres energii (po ustaleniu wzorów, C3).
 
 ### E. Sprawozdanie (`projekt/sprawozdanie.md` → PDF)
 - [ ] E1. Szkielet sekcji (zrobione – uzupełniać).
