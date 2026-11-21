@@ -5,12 +5,16 @@
 //  OUT[i][j] = sum_{u=-R..R} sum_{v=-R..R} TAB[i+R+u][j+R+v]
 //
 //  Uzycie:
-//    stencil -N=<n> -R=<r> [-BS=16|32] [-mode=cpu|gpu1|gpu2|all] [-reps=<k>]
+//    stencil -N=<n> -R=<r> [-BS=16|32] [-mode=<lista>] [-reps=<k>]
 //            [-data=random|uniform] [-threads=<t>] [-dev=<d>] [-seed=<s>]
 //
-//    -mode   cpu  – tylko referencja CPU (OpenMP)
-//            gpu1 – wariant 1 (efektywny),  gpu2 – wariant 2 (nieefektywny)  [TODO A4/A5]
-//            all  – CPU + oba warianty GPU, z porownaniem wynikow
+//    -mode   lista oddzielona przecinkami (domyslnie cpu,gpu1,gpu2):
+//            cpu  – referencja CPU (OpenMP)
+//            gpu0 – kernel kontrolny: tylko pamiec globalna, bez pamieci wspoldzielonej
+//            gpu1 – wariant 1: pamiec globalna laczona, shared bez konfliktow bankow
+//            gpu2 – wariant 2: pamiec globalna nielaczona, shared z konfliktami bankow
+//            all  = cpu,gpu0,gpu1,gpu2
+//            Gdy jest cpu, wyniki GPU sa porownywane z CPU element po elemencie.
 //    -reps   liczba mierzonych powtorzen (po 1 rozgrzewce); czas reprezentatywny = mediana
 //    -data   random  – dane niejednorodne, U[0,1), staly seed (domyslnie)
 //            uniform – same 1.0f -> kazdy element OUT musi byc dokladnie (2R+1)^2
@@ -44,24 +48,44 @@ struct Params {
     int threads = 0;  // 0 = omp_get_max_threads()
     int dev = 0;
     unsigned seed = 12345u;
-    std::string mode = "cpu";
+    bool cpu = false, gpu[3] = {false, false, false};  // gpu[0]=kernel0, gpu[1]=wariant1, gpu[2]=wariant2
     std::string data = "random";
 
     int M() const { return N - 2 * R; }  // wymiar tablicy wynikowej
+    bool anyGpu() const { return gpu[0] || gpu[1] || gpu[2]; }
 };
 
 static void usage(const char *prog) {
     printf(
-        "Uzycie: %s -N=<n> -R=<r> [-BS=16|32] [-mode=cpu|gpu1|gpu2|all] [-reps=<k>]\n"
+        "Uzycie: %s -N=<n> -R=<r> [-BS=16|32] [-mode=cpu,gpu0,gpu1,gpu2|all] [-reps=<k>]\n"
         "          [-data=random|uniform] [-threads=<t>] [-dev=<d>] [-seed=<s>]\n",
         prog);
+}
+
+static bool parseMode(const std::string &list, Params &p) {
+    p.cpu = false;
+    p.gpu[0] = p.gpu[1] = p.gpu[2] = false;
+    size_t start = 0;
+    while (start <= list.size()) {
+        size_t end = list.find(',', start);
+        if (end == std::string::npos) end = list.size();
+        const std::string m = list.substr(start, end - start);
+        if (m == "cpu") p.cpu = true;
+        else if (m == "gpu0") p.gpu[0] = true;
+        else if (m == "gpu1") p.gpu[1] = true;
+        else if (m == "gpu2") p.gpu[2] = true;
+        else if (m == "all") p.cpu = p.gpu[0] = p.gpu[1] = p.gpu[2] = true;
+        else { fprintf(stderr, "Blad: nieznany tryb '%s'\n", m.c_str()); return false; }
+        start = end + 1;
+    }
+    return true;
 }
 
 // Argumenty w postaci -nazwa=wartosc, nazwa dopasowywana dokladnie (z rozroznieniem
 // wielkosci liter). Uwaga: helper_string.h porownuje tylko prefiks bez rozrozniania
 // wielkosci liter, przez co "-reps" bylby brany za "-R" – dlatego wlasny parser.
 static bool parseArgs(int argc, char **argv, Params &p) {
-    bool ok = true;
+    bool ok = parseMode("cpu,gpu1,gpu2", p);
     for (int a = 1; a < argc; ++a) {
         std::string arg = argv[a];
         if (arg == "-h" || arg == "--help" || arg == "-help") return false;
@@ -71,7 +95,8 @@ static bool parseArgs(int argc, char **argv, Params &p) {
             ok = false;
             continue;
         }
-        const std::string key = arg.substr(arg[1] == '-' ? 2 : 1, eq - (arg[1] == '-' ? 2 : 1));
+        const size_t k0 = (arg[1] == '-') ? 2 : 1;
+        const std::string key = arg.substr(k0, eq - k0);
         const std::string val = arg.substr(eq + 1);
         const int iv = atoi(val.c_str());
         if (key == "N") p.N = iv;
@@ -81,7 +106,7 @@ static bool parseArgs(int argc, char **argv, Params &p) {
         else if (key == "threads") p.threads = iv;
         else if (key == "dev") p.dev = iv;
         else if (key == "seed") p.seed = (unsigned)strtoul(val.c_str(), nullptr, 10);
-        else if (key == "mode") p.mode = val;
+        else if (key == "mode") ok &= parseMode(val, p);
         else if (key == "data") p.data = val;
         else { fprintf(stderr, "Blad: nieznany parametr '%s'\n", key.c_str()); ok = false; }
     }
@@ -90,9 +115,6 @@ static bool parseArgs(int argc, char **argv, Params &p) {
     if (p.N <= 2 * p.R) { fprintf(stderr, "Blad: wymagane N > 2R (N=%d, R=%d)\n", p.N, p.R); ok = false; }
     if (p.BS != 16 && p.BS != 32) { fprintf(stderr, "Blad: BS musi byc 16 lub 32\n"); ok = false; }
     if (p.reps < 1) { fprintf(stderr, "Blad: reps >= 1\n"); ok = false; }
-    if (p.mode != "cpu" && p.mode != "gpu1" && p.mode != "gpu2" && p.mode != "all") {
-        fprintf(stderr, "Blad: nieznany mode '%s'\n", p.mode.c_str()); ok = false;
-    }
     if (p.data != "random" && p.data != "uniform") {
         fprintf(stderr, "Blad: nieznany data '%s'\n", p.data.c_str()); ok = false;
     }
@@ -150,7 +172,7 @@ static void initInput(std::vector<float> &tab, const Params &p) {
 // rowna praca na wiersz). Wiersz i jest liczony fragmentami po JB elementow:
 //   acc[k] += tab[i+u][jb+k+v]   dla k = 0..JB-1, u,v = 0..2R
 // acc[] to zmienna prywatna watku (miesci sie w rejestrach wektorowych SIMD), wiec
-// w petli wewnetrznej sa tylko odczyty kolejnych adresow (lokalnosc przestrzennna,
+// w petli wewnetrznej sa tylko odczyty kolejnych adresow (lokalnosc przestrzenna,
 // wektoryzacja), a wiersze tab[i..i+2R] uzywane wielokrotnie pozostaja w cache
 // (lokalnosc czasowa). Kolejnosc sumowania pojedynczego elementu jest taka sama
 // jak w definicji: u = -R..R (zewnetrzna), v = -R..R (wewnetrzna).
@@ -215,11 +237,14 @@ static CheckResult compare(const float *ref, const float *got, size_t n, int R) 
         const double a = ref[k], b = got[k];
         const double ae = std::fabs(a - b);
         const double re = ae / std::max(std::fabs(a), 1.0);
-        c.max_abs = std::max(c.max_abs, ae);
-        c.max_rel = std::max(c.max_rel, re);
-        if (!(re <= tol)) {  // !(<=) lapie tez NaN
+        if (!(re <= tol)) {  // !(<=) lapie tez NaN (np. element, ktorego kernel nie zapisal)
             if (c.first_bad == (size_t)-1) c.first_bad = k;
             ++c.bad;
+            c.max_abs = std::isnan(ae) ? INFINITY : std::max(c.max_abs, ae);
+            c.max_rel = std::isnan(re) ? INFINITY : std::max(c.max_rel, re);
+        } else {
+            c.max_abs = std::max(c.max_abs, ae);
+            c.max_rel = std::max(c.max_rel, re);
         }
     }
     return c;
@@ -234,9 +259,182 @@ static CheckResult checkUniform(const float *got, size_t n, int R) {
     return c;
 }
 
-// -------------------------------------------------------------------------------------
+// =====================================================================================
 //  GPU
+// =====================================================================================
+//
+//  Podzial pracy (wszystkie kernele):
+//    blok (bx,by) o wymiarach BS x BS liczy fragment OUT[i0..i0+BS-1][j0..j0+BS-1],
+//    i0 = by*BS, j0 = bx*BS; watek (tx,ty) liczy OUT[i0+ty][j0+tx].
+//    Siatka: ceil(M/BS) x ceil(M/BS) blokow; watki poza M x M nic nie zapisuja.
+//
+//  Warianty z pamiecia wspoldzielona: blok potrzebuje fragmentu TAB o wymiarach
+//    T x T, T = BS + 2R (wiersze i0..i0+T-1, kolumny j0..j0+T-1), ktory wszystkie
+//    BS*BS watkow laduje kolektywnie do pamieci wspoldzielonej (petla o kroku BS*BS),
+//    a nastepnie kazdy watek sumuje (2R+1)^2 elementow z pamieci wspoldzielonej.
+//    Pamiec wspoldzielona to 32 banki 4-bajtowe: slowo o indeksie a lezy w banku a % 32.
+//
+//  Limit pamieci wspoldzielonej: 48 KB/blok (GTX 1080 nie pozwala przekroczyc;
+//  ten sam limit przyjmujemy na RTX 4060, zeby kod byl identyczny).
+static constexpr int SMEM_LIMIT = 48 * 1024;
+
+// Najmniejsze P >= T takie, ze P % 32 == want (want w 0..31).
+__host__ __device__ constexpr int padTo(int T, int want) { return T + ((want - T % 32) + 32) % 32; }
+
+// Wariant 1: tile[r*P + c] (wierszami). Przy obliczeniach warp czyta adresy
+//   (ty+u)*P + tx+v.
+//   BS=32: warp = jeden wiersz bloku (32 kolejne tx) -> 32 kolejne slowa -> 32 rozne
+//          banki, bez konfliktow dla dowolnego P, wiec P = T (bez dopelnienia).
+//   BS=16: warp = dwa polwiersze (ty i ty+1, po 16 watkow); polwarpy sa przesuniete
+//          o P slow. Banki sa rozlaczne tylko gdy P % 32 == 16 -> dopelnienie wiersza.
+__host__ __device__ constexpr int pitchV1(int BS, int T) { return BS == 32 ? T : padTo(T, 16); }
+
+// Wariant 2: tileT[c*P + r] (transpozycja – kolumna TAB to wiersz w shared). Przy
+//   obliczeniach warp czyta adresy (tx+v)*P + ty+u: kolejne tx -> krok P slow ->
+//   bank ((tx+v)*P + ty+u) % 32. Stopien konfliktu = gcd(P, 32):
+//   P % 32 == 0 -> wszystkie 32 watki (BS=32) / 16 watkow polwarpa (BS=16) w tym samym banku.
+//   Jesli kafel z P = wielokrotnosc 32 nie miesci sie w 48 KB (BS=32, R>32),
+//   bierzemy P % 32 == 16 -> 16-krotny konflikt (dwa banki na warp).
+__host__ __device__ constexpr int pitchV2(int T) {
+    return (T * padTo(T, 0) * 4 <= SMEM_LIMIT) ? padTo(T, 0) : padTo(T, 16);
+}
+
+__host__ __device__ constexpr int gcd32(int P) {
+    int g = 32;
+    while (P % g) g /= 2;
+    return g;
+}
+
 // -------------------------------------------------------------------------------------
+//  Kernel 0 – kontrolny: bez pamieci wspoldzielonej, kazdy watek czyta (2R+1)^2
+//  elementow bezposrednio z pamieci globalnej (warp czyta kolejne adresy -> laczone,
+//  ale kazdy element TAB jest pobierany wielokrotnie; pomaga tylko cache L1/L2).
+// -------------------------------------------------------------------------------------
+template <int BS>
+__global__ void stencilKernel0(const float *__restrict__ in, float *__restrict__ out, int N, int R) {
+    const int M = N - 2 * R;
+    const int K = 2 * R + 1;
+    const int i = blockIdx.y * BS + threadIdx.y;
+    const int j = blockIdx.x * BS + threadIdx.x;
+    if (i >= M || j >= M) return;
+    float s = 0.0f;
+    for (int u = 0; u < K; ++u) {
+        const float *row = in + (size_t)(i + u) * N + j;
+        for (int v = 0; v < K; ++v) s += row[v];
+    }
+    out[(size_t)i * M + j] = s;
+}
+
+// -------------------------------------------------------------------------------------
+//  Wariant 1 – efektywny
+//    ladowanie: liniowy indeks watku t = ty*BS + tx przebiega kafel wierszami
+//               (r = idx / T, c = idx % T) -> kolejne watki warpa czytaja kolejne
+//               adresy TAB (laczenie dostepow, 1 wiersz kafla = ciagly obszar),
+//    obliczenia: watek (tx,ty) czyta tile[(ty+u)*P + tx+v] -> kolejne watki warpa,
+//               kolejne slowa -> rozne banki (P dobrane jak w pitchV1).
+// -------------------------------------------------------------------------------------
+template <int BS>
+__global__ void stencilKernelV1(const float *__restrict__ in, float *__restrict__ out, int N, int R) {
+    extern __shared__ float tile[];
+    const int T = BS + 2 * R;
+    const int P = pitchV1(BS, T);
+    const int tx = threadIdx.x, ty = threadIdx.y;
+    const int i0 = blockIdx.y * BS, j0 = blockIdx.x * BS;
+
+    for (int idx = ty * BS + tx; idx < T * T; idx += BS * BS) {
+        const int r = idx / T, c = idx - r * T;
+        const int gr = i0 + r, gc = j0 + c;
+        tile[r * P + c] = (gr < N && gc < N) ? in[(size_t)gr * N + gc] : 0.0f;
+    }
+    __syncthreads();
+
+    const int M = N - 2 * R;
+    const int K = 2 * R + 1;
+    const int i = i0 + ty, j = j0 + tx;
+    if (i < M && j < M) {
+        const float *base = tile + ty * P + tx;
+        float s = 0.0f;
+        for (int u = 0; u < K; ++u)
+            for (int v = 0; v < K; ++v) s += base[u * P + v];
+        out[(size_t)i * M + j] = s;
+    }
+}
+
+// -------------------------------------------------------------------------------------
+//  Wariant 2 – nieefektywny
+//    ladowanie: ten sam kafel, ale indeks liniowy przebiega go kolumnami
+//               (r = idx % T, c = idx / T) -> kolejne watki warpa czytaja kolejne
+//               WIERSZE TAB (krok N*4 B) -> kazdy watek w innym segmencie pamieci,
+//               brak laczenia (do 32 transakcji na instrukcje warpa).
+//               Zapis do tileT[c*P + r] jest ciagly (bez konfliktow).
+//    obliczenia: watek (tx,ty) czyta tileT[(tx+v)*P + ty+u] -> kolejne watki warpa
+//               co P slow -> ten sam bank (konflikt gcd(P,32)-krotny, patrz pitchV2).
+//    Kolejnosc sumowania (u zewn., v wewn.) taka sama jak w wariancie 1 i na CPU.
+// -------------------------------------------------------------------------------------
+template <int BS>
+__global__ void stencilKernelV2(const float *__restrict__ in, float *__restrict__ out, int N, int R) {
+    extern __shared__ float tileT[];
+    const int T = BS + 2 * R;
+    const int P = pitchV2(T);
+    const int tx = threadIdx.x, ty = threadIdx.y;
+    const int i0 = blockIdx.y * BS, j0 = blockIdx.x * BS;
+
+    for (int idx = ty * BS + tx; idx < T * T; idx += BS * BS) {
+        const int c = idx / T, r = idx - c * T;
+        const int gr = i0 + r, gc = j0 + c;
+        tileT[c * P + r] = (gr < N && gc < N) ? in[(size_t)gr * N + gc] : 0.0f;
+    }
+    __syncthreads();
+
+    const int M = N - 2 * R;
+    const int K = 2 * R + 1;
+    const int i = i0 + ty, j = j0 + tx;
+    if (i < M && j < M) {
+        const float *base = tileT + tx * P + ty;
+        float s = 0.0f;
+        for (int u = 0; u < K; ++u)
+            for (int v = 0; v < K; ++v) s += base[v * P + u];
+        out[(size_t)i * M + j] = s;
+    }
+}
+
+// -------------------------------------------------------------------------------------
+//  Host: konfiguracja i pomiar
+// -------------------------------------------------------------------------------------
+typedef void (*KernelFn)(const float *, float *, int, int);
+
+struct LaunchCfg {
+    KernelFn fn;
+    dim3 grid, block;
+    size_t smem;  // bajty pamieci wspoldzielonej (dynamicznej)
+    int pitch;    // P (slowa) – 0 dla kernela 0
+    int conflict; // przewidywany stopien konfliktu bankow przy obliczeniach
+};
+
+template <int BS>
+static LaunchCfg makeCfgBS(int variant, int N, int R) {
+    LaunchCfg c;
+    const int M = N - 2 * R;
+    const int T = BS + 2 * R;
+    c.block = dim3(BS, BS);
+    c.grid = dim3((M + BS - 1) / BS, (M + BS - 1) / BS);  // pokrycie calego M x M
+    if (variant == 0) {
+        c.fn = stencilKernel0<BS>; c.pitch = 0; c.smem = 0; c.conflict = 0;
+    } else if (variant == 1) {
+        c.fn = stencilKernelV1<BS>; c.pitch = pitchV1(BS, T); c.conflict = 1;
+        c.smem = (size_t)T * c.pitch * sizeof(float);
+    } else {
+        c.fn = stencilKernelV2<BS>; c.pitch = pitchV2(T);
+        c.conflict = std::min(gcd32(c.pitch), BS == 16 ? 16 : 32);
+        c.smem = (size_t)T * c.pitch * sizeof(float);
+    }
+    return c;
+}
+
+static LaunchCfg makeCfg(int variant, const Params &p) {
+    return p.BS == 16 ? makeCfgBS<16>(variant, p.N, p.R) : makeCfgBS<32>(variant, p.N, p.R);
+}
+
 static void printDeviceInfo(int dev) {
     cudaDeviceProp prop;
     checkCudaErrors(cudaGetDeviceProperties(&prop, dev));
@@ -247,28 +445,70 @@ static void printDeviceInfo(int dev) {
            prop.sharedMemPerBlock, prop.sharedMemPerMultiprocessor, prop.maxThreadsPerMultiProcessor);
 }
 
-// TODO A3-A5: kernel0, wariant 1, wariant 2 + pomiar cudaEvent.
-static bool runGPU(int variant, const std::vector<float> &tab, std::vector<float> &out,
-                   const Params &p, TimingStats &ts) {
-    (void)tab; (void)out; (void)p; (void)ts;
-    printf("[gpu%d] jeszcze nie zaimplementowany\n", variant);
-    return false;
+// Pomiar: zdarzenia CUDA (cudaEvent) zapisane w strumieniu przed i po kernelu – mierza
+// czas wykonania na GPU niezaleznie od asynchronicznego uruchamiania. Transfery
+// CPU<->GPU sa poza pomiarem. 1 uruchomienie rozgrzewkowe + reps mierzonych.
+static bool runGPU(int variant, const float *d_in, float *d_out, std::vector<float> &out,
+                   const Params &p, TimingStats &ts, LaunchCfg &cfg) {
+    cfg = makeCfg(variant, p);
+    if (cfg.smem > SMEM_LIMIT) {
+        printf("[gpu%d] pominiety: kafel wymaga %zu B pamieci wspoldzielonej (> %d B), BS=%d R=%d\n",
+               variant, cfg.smem, SMEM_LIMIT, p.BS, p.R);
+        return false;
+    }
+    const size_t outBytes = out.size() * sizeof(float);
+    // 0xFF -> NaN: element niezapisany przez kernel zostanie wykryty przy porownaniu.
+    checkCudaErrors(cudaMemset(d_out, 0xFF, outBytes));
+
+    cfg.fn<<<cfg.grid, cfg.block, cfg.smem>>>(d_in, d_out, p.N, p.R);  // rozgrzewka
+    checkCudaErrors(cudaGetLastError());
+    checkCudaErrors(cudaDeviceSynchronize());
+
+    cudaEvent_t start, stop;
+    checkCudaErrors(cudaEventCreate(&start));
+    checkCudaErrors(cudaEventCreate(&stop));
+    std::vector<double> t(p.reps);
+    for (int r = 0; r < p.reps; ++r) {
+        checkCudaErrors(cudaEventRecord(start));
+        cfg.fn<<<cfg.grid, cfg.block, cfg.smem>>>(d_in, d_out, p.N, p.R);
+        checkCudaErrors(cudaEventRecord(stop));
+        checkCudaErrors(cudaEventSynchronize(stop));
+        checkCudaErrors(cudaGetLastError());
+        float ms = 0;
+        checkCudaErrors(cudaEventElapsedTime(&ms, start, stop));
+        t[r] = ms;
+    }
+    checkCudaErrors(cudaEventDestroy(start));
+    checkCudaErrors(cudaEventDestroy(stop));
+    checkCudaErrors(cudaMemcpy(out.data(), d_out, outBytes, cudaMemcpyDeviceToHost));
+    ts = stats(t);
+    return true;
 }
 
 // -------------------------------------------------------------------------------------
 //  Raportowanie
 // -------------------------------------------------------------------------------------
 static void report(const char *device, const char *variant, const Params &p, int threads,
-                   const TimingStats &ts, const CheckResult *chk) {
+                   const TimingStats &ts, const CheckResult *chk, const LaunchCfg *cfg) {
     const double gflops = flopCount(p) / (ts.med_ms * 1e-3) / 1e9;
-    printf("[%s/%s] N=%d R=%d BS=%d: t_med=%.4f ms (min %.4f, avg %.4f), %.2f GFLOP/s",
-           device, variant, p.N, p.R, p.BS, ts.med_ms, ts.min_ms, ts.mean_ms, gflops);
+    printf("[%s/%s] N=%d R=%d BS=%d: t_med=%.4f ms (min %.4f, avg %.4f), %.2f GFLOP/s", device,
+           variant, p.N, p.R, p.BS, ts.med_ms, ts.min_ms, ts.mean_ms, gflops);
+    if (cfg)
+        printf(", grid=%ux%u, smem=%zu B, P=%d, konflikt=%d-way", cfg->grid.x, cfg->grid.y, cfg->smem,
+               cfg->pitch, cfg->conflict);
     if (chk) printf(", max_rel_err=%.3e -> %s", chk->max_rel, chk->ok() ? "OK" : "BLAD");
     printf("\n");
-    // CSV,device,variant,BS,N,R,threads,reps,data,t_med_ms,t_min_ms,t_mean_ms,gflops,max_abs_err,max_rel_err,ok
-    printf("CSV,%s,%s,%d,%d,%d,%d,%d,%s,%.6f,%.6f,%.6f,%.4f,%.3e,%.3e,%d\n", device, variant, p.BS,
-           p.N, p.R, threads, p.reps, p.data.c_str(), ts.med_ms, ts.min_ms, ts.mean_ms, gflops,
-           chk ? chk->max_abs : 0.0, chk ? chk->max_rel : 0.0, chk ? (int)chk->ok() : -1);
+    if (chk && !chk->ok()) {
+        const int M = p.M();
+        printf("    bledne elementy: %zu, pierwszy: OUT[%zu][%zu]\n", chk->bad, chk->first_bad / M,
+               chk->first_bad % M);
+    }
+    // CSV,device,variant,BS,N,R,threads,reps,data,t_med_ms,t_min_ms,t_mean_ms,gflops,
+    //     max_abs_err,max_rel_err,ok,smem_B,pitch,conflict
+    printf("CSV,%s,%s,%d,%d,%d,%d,%d,%s,%.6f,%.6f,%.6f,%.4f,%.3e,%.3e,%d,%zu,%d,%d\n", device, variant,
+           p.BS, p.N, p.R, threads, p.reps, p.data.c_str(), ts.med_ms, ts.min_ms, ts.mean_ms, gflops,
+           chk ? chk->max_abs : 0.0, chk ? chk->max_rel : 0.0, chk ? (int)chk->ok() : -1,
+           cfg ? cfg->smem : (size_t)0, cfg ? cfg->pitch : 0, cfg ? cfg->conflict : 0);
 }
 
 // -------------------------------------------------------------------------------------
@@ -282,17 +522,17 @@ int main(int argc, char **argv) {
     const int threads = omp_get_max_threads();
     const int M = p.M();
 
-    printf("N=%d R=%d M=N-2R=%d BS=%d mode=%s data=%s reps=%d watki_CPU=%d FLOP=%.4e\n", p.N, p.R,
-           M, p.BS, p.mode.c_str(), p.data.c_str(), p.reps, threads, flopCount(p));
+    printf("N=%d R=%d M=N-2R=%d BS=%d data=%s reps=%d watki_CPU=%d FLOP=%.4e\n", p.N, p.R, M, p.BS,
+           p.data.c_str(), p.reps, threads, flopCount(p));
 
     std::vector<float> tab((size_t)p.N * p.N);
-    std::vector<float> outCPU((size_t)M * M);
+    std::vector<float> outCPU;
     initInput(tab, p);
+    bool allOk = true;
 
     // --- CPU (referencja) ---
-    const bool needCPU = (p.mode == "cpu" || p.mode == "all");
-    bool allOk = true;
-    if (needCPU) {
+    if (p.cpu) {
+        outCPU.resize((size_t)M * M);
         TimingStats ts = runCPU(tab, outCPU, p);
         CheckResult chk;
         const CheckResult *pchk = nullptr;
@@ -301,25 +541,34 @@ int main(int argc, char **argv) {
             pchk = &chk;
             allOk &= chk.ok();
         }
-        report("cpu", "omp", p, threads, ts, pchk);
+        report("cpu", "omp", p, threads, ts, pchk, nullptr);
     }
 
     // --- GPU ---
-    if (p.mode != "cpu") {
+    if (p.anyGpu()) {
         checkCudaErrors(cudaSetDevice(p.dev));
         printDeviceInfo(p.dev);
+        float *d_in = nullptr, *d_out = nullptr;
+        checkCudaErrors(cudaMalloc(&d_in, tab.size() * sizeof(float)));
+        checkCudaErrors(cudaMalloc(&d_out, (size_t)M * M * sizeof(float)));
+        checkCudaErrors(cudaMemcpy(d_in, tab.data(), tab.size() * sizeof(float), cudaMemcpyHostToDevice));
+
         std::vector<float> outGPU((size_t)M * M);
-        for (int variant = 1; variant <= 2; ++variant) {
-            if (p.mode != "all" && p.mode != (variant == 1 ? "gpu1" : "gpu2")) continue;
+        static const char *names[3] = {"v0", "v1", "v2"};
+        for (int variant = 0; variant < 3; ++variant) {
+            if (!p.gpu[variant]) continue;
             TimingStats ts;
-            if (!runGPU(variant, tab, outGPU, p, ts)) { allOk = false; continue; }
-            CheckResult chk = needCPU ? compare(outCPU.data(), outGPU.data(), outGPU.size(), p.R)
-                                      : (p.data == "uniform" ? checkUniform(outGPU.data(), outGPU.size(), p.R)
-                                                             : CheckResult{});
-            allOk &= chk.ok();
-            report("gpu", variant == 1 ? "v1" : "v2", p, 0, ts,
-                   (needCPU || p.data == "uniform") ? &chk : nullptr);
+            LaunchCfg cfg;
+            if (!runGPU(variant, d_in, d_out, outGPU, p, ts, cfg)) { allOk = false; continue; }
+            CheckResult chk;
+            const CheckResult *pchk = nullptr;
+            if (p.cpu) { chk = compare(outCPU.data(), outGPU.data(), outGPU.size(), p.R); pchk = &chk; }
+            else if (p.data == "uniform") { chk = checkUniform(outGPU.data(), outGPU.size(), p.R); pchk = &chk; }
+            if (pchk) allOk &= chk.ok();
+            report("gpu", names[variant], p, 0, ts, pchk, &cfg);
         }
+        checkCudaErrors(cudaFree(d_in));
+        checkCudaErrors(cudaFree(d_out));
     }
 
     return allOk ? 0 : 2;

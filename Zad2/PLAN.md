@@ -54,12 +54,45 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
       Host kompilowany z `/arch:AVX2` (tasks.json) i `-march=native` (Makefile; i7-8700 ma AVX2+FMA wg lscpu) –
       w labie budować na gpu/gpu1, nie na polluksie. **Lab jeszcze nieprzetestowany.**
       Build lokalnie z Git Bash wymaga `MSYS_NO_PATHCONV=1` (inaczej `/openmp` zamieniane na ścieżkę).
-- [ ] A3. Kernel0 (naiwny, tylko pamięć globalna) – do sanity-checku.
-- [ ] A4. Kernel wariant 1 (coalesced + bez konfliktów), `template<int BS>`.
-- [ ] A5. Kernel wariant 2 (non-coalesced + konflikty banków).
-- [ ] A6. Weryfikacja: dane jednorodne i niejednorodne, różne N (też N−2R niebędące wielokrotnością BS), R, BS.
-- [ ] A7. `compute-sanitizer` memcheck + racecheck (zadania w VS Code).
-- [ ] A8. (opcjonalnie) potwierdzenie transakcji/konfliktów profilerem: `ncu` – metryki `l1tex__t_requests/sectors_pipe_lsu_mem_global_op_ld`, `l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld` (RTX 4060; na GTX 1080 `nvprof` nie wspiera CC 6.1 w CUDA 12.5? – sprawdzić).
+- [x] A3. `stencilKernel0<BS>` – tylko pamięć globalna (kontrolny, `-mode=gpu0`).
+- [x] A4. `stencilKernelV1<BS>`: ładowanie kafla T×T (T=BS+2R) wierszami (`r=idx/T, c=idx%T`) → coalesced;
+      obliczenia `tile[(ty+u)*P + tx+v]`; pitch P=T dla BS=32, P≡16 (mod 32) dla BS=16 (dwa półwarpy w rozłącznych bankach).
+- [x] A5. `stencilKernelV2<BS>`: ładowanie kolumnami (`c=idx/T, r=idx%T`) → wątki warpa w różnych wierszach (krok N·4 B);
+      kafel transponowany `tileT[c*P + r]`, obliczenia `tileT[(tx+v)*P + ty+u]` → krok P między wątkami → konflikt gcd(P,32):
+      P≡0 (mod 32) gdy mieści się w 48 KB (32-way dla BS=32, 16-way dla BS=16), inaczej P≡16 → 16-way (BS=32, R>32).
+      **Limit: wariant 2 przy BS=32 działa dla R ≤ 38** (R=39 → 49280 B > 48 KB, program go pomija). Wariant 1: R ≤ 39.
+- [x] A6. Weryfikacja RTX 4060: BS 16/32 × R {0,1,4,7,16,33,36,37,38} × N (też M niepodzielne przez BS), random i uniform →
+      wszystkie warianty błąd 0 (ta sama kolejność sumowania co CPU). Wyjście kernela inicjowane NaN (0xFF) – wykrywa niezapisane elementy.
+- [x] A7. `compute-sanitizer` memcheck + racecheck (build `-G`): 0 błędów, 0 hazardów.
+- [x] A8. Potwierdzenie `ncu` na RTX 4060 (N=1024; surowe dane: `projekt/results/ncu_rtx4060.csv`; liczniki włączone w panelu NVIDIA).
+      Sektory 32 B na żądanie odczytu globalnego (ideał dla 32 floatów = 4) i fale (wavefronts) shared na instrukcję odczytu shared:
+
+      | BS | R | v1 sektory/żądanie | v2 sektory/żądanie | v1 fale/LDS | v2 fale/LDS | przewidywanie v2 |
+      |---|---|---|---|---|---|---|
+      | 16 | 4  | 3.98 | 23.9 | ~1 (0 konfliktów) | 15.9 | 16-way (T=24<32, część warpa się zawija) |
+      | 16 | 36 | 3.99 | 32.0 | ~1 (0.01%) | 15.9 | 16-way |
+      | 32 | 4  | 3.98 | 31.8 | ~1 | 31.8 | 32-way |
+      | 32 | 36 | 3.99 | 31.9 | ~1 (0 konfliktów) | 15.9 | 16-way (P=112) |
+
+      Wszystkie przewidywania potwierdzone. Ten sam CSV dla GTX 1080 w labie – sprawdzić czy jest `nvprof`/`ncu` dla CC 6.1
+      (ncu nie wspiera Pascala od dawna → prawdopodobnie `nvprof --metrics gld_transactions_per_request,shared_load_transactions_per_request`).
+- Pomiar próbny RTX 4060 (2026-11-21, zasilacz + tryb Performance, limit GPU 105 W; N=4096, mediana 10 powt.) [GFLOP/s]
+  – dane: `projekt/results/rtx4060_perf_probe.csv`, pobór mocy: `..._power.csv`:
+
+  | R | BS | CPU (16 wątków) | v0 | v1 | v2 | v1/v2 |
+  |---|---|---|---|---|---|---|
+  | 4  | 16 | 120 | 549 | 531 | 85  | 6.2× |
+  | 4  | 32 | 153 | 480 | 505 | 56  | 9.0× |
+  | 36 | 16 | 155 | 826 | 911 | 117 | 7.8× |
+  | 36 | 32 | 144 | 914 | 905 | 118 | 7.7× |
+
+  GPU pobierało maks. 65 W (śr. ~56 W pod obciążeniem), zegar SM ~2475 MHz – **nie dochodzi do limitu 105 W**, więc
+  wyniki prawie takie same jak przy limicie 50 W (wcześniej R=36: v0 769–835, v1 879–903). Kernel ograniczony przepustowością
+  LDS/L1, nie mocą. Do energii: rozważyć podanie zarówno mocy nominalnej (105 W, wymaganie projektu) jak i zmierzonej (nvidia-smi).
+  Rozrzut: CPU min–mediana do ~25%, v2 BS16 R4 dwumodalny (min 11.9 vs med 15.7 ms) – przy eksperymentach więcej powtórzeń.
+  Obserwacja: v1 ≈ v0 – na Ada L1 i shared to ta sama pamięć, a v1 robi 1 odczyt shared na 1 FLOP (ograniczenie przepustowości LDS).
+  Do rozważenia (opcjonalnie): ponowne użycie danych w rejestrach (np. kilka wyników na wątek / sumy wierszy) – ale zmienia to
+  „czystość” porównania wariantów; najpierw przedyskutować.
 - [ ] A9. `README.md` w `projekt/` z instrukcją kompilacji i uruchamiania (wymagane w zip).
 
 ### B. Infrastruktura
