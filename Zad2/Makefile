@@ -21,7 +21,9 @@ OUT  := build/$(NAME)
 ARCH ?= sm_61
 GENCODE := -arch=$(ARCH)
 
-NVCCFLAGS := -std=c++17 -Wno-deprecated-gpu-targets -Xcompiler -fopenmp
+# Host code: OpenMP + AVX2/FMA etc. of the build machine (i7-8700 on gpu/gpu1 has AVX2).
+# Build on the machine you run on (gpu/gpu1), not on polluks.
+NVCCFLAGS := -std=c++17 -Wno-deprecated-gpu-targets -Xcompiler -fopenmp -Xcompiler -march=native
 ifeq ($(dbg),1)
     NVCCFLAGS += -G -g
 else

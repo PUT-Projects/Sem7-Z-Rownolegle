@@ -49,9 +49,10 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
       `checkUniform()` (wynik musi być dokładnie (2R+1)²), kod wyjścia 0/1 (argumenty)/2 (błąd wyniku lub brak GPU).
       Uwaga: nie używać `helper_string.h` do argumentów – porównuje prefiksy bez wielkości liter (`-reps` łapał się jako `-R`).
 - [x] A2. Referencja CPU OpenMP: `parallel for schedule(static)` po wierszach, bloki JB=64 z akumulatorem `acc[64]` (wektoryzacja),
-      kolejność sumowania jak w definicji. Lokalnie (7840HS, 16 wątków): ~97 GFLOP/s dla N=2048 R=8 (wersja naiwna: 22).
+      kolejność sumowania jak w definicji. Lokalnie (7840HS, 16 wątków, N=2048 R=8): naiwna 22 → bloki SSE2 97 → **AVX2 138 GFLOP/s**.
       Przetestowane na danych jednorodnych: R=0,1,4,7,36,37, M niebędące wielokrotnością 64, błędne argumenty.
-      Możliwe ulepszenie: `/arch:AVX2` (lokalnie) / `-march=native` (lab) – na razie host kompilowany z SSE2 (domyślnie).
+      Host kompilowany z `/arch:AVX2` (tasks.json) i `-march=native` (Makefile; i7-8700 ma AVX2+FMA wg lscpu) –
+      w labie budować na gpu/gpu1, nie na polluksie. **Lab jeszcze nieprzetestowany.**
       Build lokalnie z Git Bash wymaga `MSYS_NO_PATHCONV=1` (inaczej `/openmp` zamieniane na ścieżkę).
 - [ ] A3. Kernel0 (naiwny, tylko pamięć globalna) – do sanity-checku.
 - [ ] A4. Kernel wariant 1 (coalesced + bez konfliktów), `template<int BS>`.
