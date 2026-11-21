@@ -125,7 +125,7 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
 - [ ] D2. Schemat banków shared (nr banku, id wątku) – brak konfliktów vs konflikty, układ kafla w shared.
 - [ ] D3. Wykresy wyników (N_stab, porównania wariantów/BS/R, CPU vs GPU).
 
-### E. Sprawozdanie (`sprawozdanie.md` → PDF)
+### E. Sprawozdanie (`projekt/sprawozdanie.md` → PDF)
 - [ ] E1. Szkielet sekcji (zrobione – uzupełniać).
 - [ ] E2. Opis systemów, opis kodu z listingami, rysunki z kodem, konfiguracja uruchomienia, wzory.
 - [ ] E3. Tabele wyników, wnioski. Numeracja i podpisy listingów/rysunków/tabel.
