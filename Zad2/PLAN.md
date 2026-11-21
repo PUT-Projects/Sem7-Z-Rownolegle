@@ -12,9 +12,13 @@ Termin: **9.01.2027** (zip z kodem + pdf sprawozdania, nazwy `NR_INDEKSU1_NR_IND
 ## Środowiska
 | | Lab (gpu / gpu1) | Lokalnie |
 |---|---|---|
-| GPU | 2× GTX 1080 (Pascal GP104, CC 6.1, 20 SM, 8 GB GDDR5X, 180 W) | RTX 4060 **Laptop** (Ada AD107, CC 8.9, 8 GB GDDR6, TGP zależny od laptopa – sprawdzić) |
+| GPU | 2× GTX 1080 (Pascal GP104, CC 6.1, 20 SM, 8 GB GDDR5X, 180 W) | RTX 4060 **Laptop** w Lenovo Legion Slim 5 14 (Ada AD107, CC 8.9, 8 GB GDDR6); `nvidia-smi -q -d POWER`: Max Power Limit **105 W**, default 55 W, aktualnie 50 W |
 | CUDA | 12.5, `-arch=sm_61`, przez `Makefile` | 13.5 (sm_89), też 12.8 i 13.0; zadania w `.vscode/tasks.json` |
-| CPU | **do sprawdzenia** (`lscpu` na gpu1) | AMD Ryzen 7 7840HS, 8C/16T, TDP 35–54 W (źródło: AMD) |
+| CPU | Intel Core i7-8700 (Coffee Lake), 6C/12T, 3.2 GHz base / 4.6 GHz turbo, L3 12 MB, TDP **65 W** (Intel ARK); host `gpu-6` (lscpu z 2026-11-21) | AMD Ryzen 7 7840HS, 8C/16T, TDP 35–54 W (źródło: AMD) |
+
+Uwaga do pomiarów lokalnych: limit mocy GPU zależy od trybu zasilania laptopa (50 W teraz vs max 105 W).
+Pomiary robić na zasilaczu w trybie Performance i zapisać `nvidia-smi -q -d POWER` z czasu pomiarów.
+Moc nominalna do energii: 105 W (max TGP z nvidia-smi) – „140 W” to prawdopodobnie łączna moc CPU+GPU laptopa.
 
 Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R przy BS=32 (patrz niżej).
 
@@ -40,8 +44,15 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
 
 ## Zadania
 ### A. Kod (`projekt/`)
-- [ ] A1. Szkielet `stencil.cu`: parsowanie argumentów (N, R, BS, wariant, liczba powtórzeń, urządzenie), alokacja, init danych.
-- [ ] A2. Referencja CPU OpenMP (`#pragma omp parallel for collapse(2)`), pomiar czasu.
+- [x] A1. Szkielet `projekt/stencil.cu`: argumenty `-N= -R= -BS= -mode=cpu|gpu1|gpu2|all -reps= -data=random|uniform -threads= -dev= -seed=`,
+      dane xorshift32 (deterministyczne), mediana/min/średnia, linie `CSV,...`, `compare()` z tolerancją `(2R+1)²·FLT_EPSILON` (wzgl.),
+      `checkUniform()` (wynik musi być dokładnie (2R+1)²), kod wyjścia 0/1 (argumenty)/2 (błąd wyniku lub brak GPU).
+      Uwaga: nie używać `helper_string.h` do argumentów – porównuje prefiksy bez wielkości liter (`-reps` łapał się jako `-R`).
+- [x] A2. Referencja CPU OpenMP: `parallel for schedule(static)` po wierszach, bloki JB=64 z akumulatorem `acc[64]` (wektoryzacja),
+      kolejność sumowania jak w definicji. Lokalnie (7840HS, 16 wątków): ~97 GFLOP/s dla N=2048 R=8 (wersja naiwna: 22).
+      Przetestowane na danych jednorodnych: R=0,1,4,7,36,37, M niebędące wielokrotnością 64, błędne argumenty.
+      Możliwe ulepszenie: `/arch:AVX2` (lokalnie) / `-march=native` (lab) – na razie host kompilowany z SSE2 (domyślnie).
+      Build lokalnie z Git Bash wymaga `MSYS_NO_PATHCONV=1` (inaczej `/openmp` zamieniane na ścieżkę).
 - [ ] A3. Kernel0 (naiwny, tylko pamięć globalna) – do sanity-checku.
 - [ ] A4. Kernel wariant 1 (coalesced + bez konfliktów), `template<int BS>`.
 - [ ] A5. Kernel wariant 2 (non-coalesced + konflikty banków).
@@ -76,6 +87,5 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
 - [ ] F1. Krótkie slajdy / ściąga do omówienia wariantów i wyników.
 
 ## Otwarte pytania
-- Dane autorów (imiona, nazwiska, nr indeksów) – skład grupy.
-- Dokładny TGP RTX 4060 Laptop w tym laptopie (model laptopa).
-- CPU na maszynach gpu/gpu1 (do `lscpu`).
+- Autor: Mateusz Chlebosz, 151817. Możliwy drugi członek – w sprawozdaniu zostawione pole TODO; przy oddaniu nazwy plików `151817[_NR2].zip/.pdf`.
+- ~~CPU gpu vs gpu1~~ – ustalone: gpu1 = `gpu-6`, gpu = `gpu-5`; przyjmujemy i7-8700 dla obu. Pomiary preferencyjnie na gpu1.

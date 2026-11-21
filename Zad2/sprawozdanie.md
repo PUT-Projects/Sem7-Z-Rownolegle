@@ -2,7 +2,9 @@
 
 **Projekt:** Suma elementów kwadratowego okna (2R+1)×(2R+1) tablicy N×N na GPU (CUDA)
 
-**Autorzy:** TODO (imię nazwisko, nr indeksu)
+**Autorzy:**
+- Mateusz Chlebosz, 151817
+- TODO (imię nazwisko, nr indeksu – drugi członek grupy, jeśli dołączy)
 **Data oddania:** TODO
 
 ---

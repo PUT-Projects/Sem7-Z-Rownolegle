@@ -3,9 +3,10 @@
   //
   // Two targets:
   //   LOCAL  - RTX 4060 (sm_89), CUDA 13.5 on this PC. Builds the ACTIVE .cu file into build\<name>.exe.
-  //   REMOTE - GTX 1080 (sm_61), CUDA 12.5 on lab machines gpu/gpu1 via polluks, using ../Makefile.
-  //            Needs host aliases "polluks" and "gpu"/"gpu1" (ProxyJump polluks) in ~/.ssh/config.
-  //            The server build is a fat binary (sm_61 + sm_89 + compute_89 PTX), so it runs on both cards.
+  //   REMOTE - GTX 1080 (sm_61), CUDA 12.5 on lab machines gpu/gpu1 via polluks, using Zad2/Makefile
+  //            (uploaded to ~/Zad2). Needs host aliases "polluks" and "gpu"/"gpu1" (ProxyJump polluks) in ~/.ssh/config.
+  //            The Makefile builds for ONE architecture (-arch=$(ARCH), default sm_61), so the remote
+  //            binary runs only on the GTX 1080; the local build (sm_89) runs only on the RTX 4060.
   //
   // CUDA 13.x cannot compile for sm_61 (minimum is sm_75) - that's why the GTX 1080 build is remote.
   // If CUDA is installed elsewhere, search/replace "CUDA\\v13.5" below.
@@ -123,7 +124,7 @@
     },
     {
       "label": "Remote: build + run on GTX 1080",
-      "detail": "Upload, then make (sm_61 + sm_89 fat binary) + run on gpu/gpu1 via polluks",
+      "detail": "Upload, then make (-arch=sm_61, CUDA 12.5) + run on gpu/gpu1 via polluks",
       "type": "process",
       "command": "ssh",
       "args": [
