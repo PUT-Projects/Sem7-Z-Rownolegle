@@ -167,7 +167,17 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
       wyniki), po powtórzeniu 150 – wiersze tego punktu w `rtx4060_main.csv` podmienione na powtórzony pomiar.
       Pobór mocy: GTX 1080 śr. ~172 W (limit 180 W), SM ~1830 MHz; RTX 4060 pod obciążeniem ~37–76 W. **nvidia-smi na laptopie
       czasem zwraca 590.01 W przy zegarze 1890 MHz – to błędny odczyt, odfiltrować (>200 W) przy analizie.**
-- [ ] C3. Energia CPU vs GPU, CGMA, przyspieszenie GPU/CPU oraz wariant1/wariant2.
+- [x] C3. `python projekt/analyze_energy.py` → `results/energia_cgma.md` (tabele) + `images/energia_N{4096,8192}.png`.
+      Wzory: E = P_nom·t (t = mediana czasu kernela / funkcji CPU), efektywność = GFLOP/s / P_nom [GFLOP/J].
+      P_nom: i7-8700 65 W (Intel ARK), Ryzen 7 7840HS 54 W (AMD: TDP 35–54 W, przyjęto górną), GTX 1080 180 W (NVIDIA),
+      RTX 4060 Laptop 105 W (NVIDIA: 35–115 W; maks. limit w tym laptopie wg nvidia-smi).
+      CGMA (FLOP / dostęp do global, odczyty+zapisy, poziom kodu): kernel 0 = (K²−1)/(K²+1) ≈ 1;
+      v1 = v2 = BS²(K²−1)/(T²+BS²): R8/BS16 57.6, R8/BS32 88.6, R36/BS16 170.5, R36/BS32 460.8
+      (v2 ma ten sam CGMA – różni się wzorcem dostępu, nie liczbą dostępów; transakcji ~8× więcej).
+      Wyniki N=8192: GTX 1080 v1 4.6–6.1 GFLOP/J vs CPU 3.1–3.8 (CPU zużywa 1.4–1.6× więcej energii), v2 0.2–0.4 GFLOP/J
+      (9–20× więcej energii niż v1). RTX 4060 v1 6.8–8.7 GFLOP/J vs CPU 2.9–3.0 (CPU 2.3–3.0× więcej), v2 0.6–1.1.
+      Uwaga do wniosków: rzeczywisty pobór laptopa (~37–76 W GPU) < 105 W → oszacowanie z P_nom zawyża energię RTX 4060;
+      GTX 1080 pracuje na limicie (~172 W ≈ 180 W), więc tam oszacowanie jest bliskie rzeczywistości.
 
 ### D. Rysunki (`images/`) – KLUCZOWY PUNKT
 Skrypty w `projekt/figures/` (matplotlib zainstalowany lokalnie przez `pip install --user matplotlib`); uruchamiać z katalogu Zad2:
