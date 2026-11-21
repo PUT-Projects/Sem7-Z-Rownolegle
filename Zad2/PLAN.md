@@ -97,11 +97,25 @@ Shared mem/blok: 48 KB (GTX 1080 – bez opt-in powyżej 48 KB), co ogranicza R 
 
 ### B. Infrastruktura
 - [ ] B1. Dopisać upload katalogu `projekt/` do zadania „Remote: upload to polluks” w `.vscode/tasks.json`.
-- [ ] B2. Skrypty eksperymentów: `projekt/run_experiments.sh` (lab) i `.ps1` (lokalnie) → CSV.
+- [x] B2. `projekt/run_experiments.sh nstab|main|all [N...]` (bash; lokalnie przez Git Bash, w labie na gpu/gpu1).
+      Zmienne: TAG (rtx4060/gtx1080 auto), BIN, DEV, R1=8, R2=36, REPS=10, NSTAB_N, OUTDIR. Zapisuje `<tag>_nstab.csv`,
+      `<tag>_main.csv`, `<tag>_*_power.csv` (nvidia-smi co 200 ms), `<tag>_sysinfo.txt`.
+      `projekt/analyze_nstab.py <csv> [prog%]` – tabele Markdown + N_stab (`<tag>_nstab.md`), tylko stdlib (brak matplotlib lokalnie).
+- [x] B2a. **Rozgrzewka na czas** (`-warmup=ms`, domyślnie 1000): GPU w laptopie startuje z 1890 MHz i dochodzi do ~2475 MHz
+      dopiero po ~1 s obciążenia → bez tego małe N mierzone przy niższym zegarze (skoki 550→717 i 690→907 GFLOP/s = 2475/1890).
+      Dowód zachowany: `results/rtx4060_nstab_bez_rozgrzewki.{csv,md}` + `_power.csv` (zegar SM w czasie) – opisać w sprawozdaniu
+      jako element metodyki.
 - [ ] B3. Zebrać specyfikację: `lscpu`, `nvidia-smi -q`, deviceQuery na lab i lokalnie (moc nominalna + źródło).
 
 ### C. Eksperymenty (oba GPU: GTX 1080 i RTX 4060)
-- [ ] C1. N_stab: wariant 1, BS=32, R1 i R2, N rosnące (np. 128…16384) → 2 tabele (czas, GFLOP/s).
+- [ ] C1. N_stab: wariant 1, BS=32, R1=8 i R2=36, N = 128…16384 → 2 tabele (czas, GFLOP/s).
+  - [x] RTX 4060 (2026-11-21, 105 W, rozgrzewka 1 s, mediana 10 powt.) – `results/rtx4060_nstab.{csv,md}`.
+        Kryterium: N_stab = najmniejsze N, dla którego żadne większe N nie daje > 5% więcej GFLOP/s.
+        **R=8: N_stab = 768** (707 GFLOP/s, plateau ~716–730); **R=36: N_stab = 640** (865, plateau ~907).
+        Przy progu 2% oba wychodzą 1024. Interpretacja: 24 SM, BS=32 → 1 blok (1024 wątki) na SM naraz (limit 1536 wątków/SM);
+        małe N = mniej bloków niż SM / mało fal → niewykorzystane SM i efekt ostatniej fali (R=36: N=128 i 192 ten sam czas – 1 fala).
+  - [ ] GTX 1080 (lab): `projekt/run_experiments.sh nstab`.
+  - Główny eksperyment (C2) robić dla N wyraźnie > max N_stab obu kart, np. `main 4096 8192` (do ustalenia po labie).
 - [ ] C2. Dla N ≥ max(N_stab): CPU f(R,N), GPU wariant 1 f(BS,R,N), GPU wariant 2 f(BS,R,N).
 - [ ] C3. Energia CPU vs GPU, CGMA, przyspieszenie GPU/CPU oraz wariant1/wariant2.
 

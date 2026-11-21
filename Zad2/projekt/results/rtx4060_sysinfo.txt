@@ -1,0 +1,17 @@
+# 2026-11-21 10:14:32  host=MCH-Legion-Slim
+GPU 0: NVIDIA GeForce RTX 4060 Laptop GPU, CC 8.9, 24 SM x 128 rdzeni, 8188 MB global, shared/blok 49152 B, shared/SM 102400 B, max watkow/SM 1536
+        GPU Ceiling Power Limit
+            Current Power Limit                        : 105.00 W
+            Requested Power Limit                      : N/A
+            Default Power Limit                        : 55.00 W
+        Min Power Limit                                : 5.00 W
+        Max Power Limit                                : 105.00 W
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+        SM                                             : 1890 MHz
+    Max Clocks
+        SM                                             : 3105 MHz
+    SM Clock Samples

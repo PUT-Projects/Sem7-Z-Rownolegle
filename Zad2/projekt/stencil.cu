@@ -15,7 +15,9 @@
 //            gpu2 – wariant 2: pamiec globalna nielaczona, shared z konfliktami bankow
 //            all  = cpu,gpu0,gpu1,gpu2
 //            Gdy jest cpu, wyniki GPU sa porownywane z CPU element po elemencie.
-//    -reps   liczba mierzonych powtorzen (po 1 rozgrzewce); czas reprezentatywny = mediana
+//    -reps   liczba mierzonych powtorzen; czas reprezentatywny = mediana
+//    -warmup minimalny czas rozgrzewki w ms przed pomiarem (domyslnie 1000, co najmniej
+//            1 uruchomienie) – stabilizuje zegar GPU/CPU
 //    -data   random  – dane niejednorodne, U[0,1), staly seed (domyslnie)
 //            uniform – same 1.0f -> kazdy element OUT musi byc dokladnie (2R+1)^2
 //
@@ -45,6 +47,7 @@ struct Params {
     int R = 4;
     int BS = 32;
     int reps = 10;
+    int warmup_ms = 1000;  // minimalny czas rozgrzewki przed pomiarem (CPU i GPU), min. 1 uruchomienie
     int threads = 0;  // 0 = omp_get_max_threads()
     int dev = 0;
     unsigned seed = 12345u;
@@ -58,7 +61,7 @@ struct Params {
 static void usage(const char *prog) {
     printf(
         "Uzycie: %s -N=<n> -R=<r> [-BS=16|32] [-mode=cpu,gpu0,gpu1,gpu2|all] [-reps=<k>]\n"
-        "          [-data=random|uniform] [-threads=<t>] [-dev=<d>] [-seed=<s>]\n",
+        "          [-warmup=<ms>] [-data=random|uniform] [-threads=<t>] [-dev=<d>] [-seed=<s>]\n",
         prog);
 }
 
@@ -103,6 +106,7 @@ static bool parseArgs(int argc, char **argv, Params &p) {
         else if (key == "R") p.R = iv;
         else if (key == "BS") p.BS = iv;
         else if (key == "reps") p.reps = iv;
+        else if (key == "warmup") p.warmup_ms = iv;
         else if (key == "threads") p.threads = iv;
         else if (key == "dev") p.dev = iv;
         else if (key == "seed") p.seed = (unsigned)strtoul(val.c_str(), nullptr, 10);
@@ -115,6 +119,7 @@ static bool parseArgs(int argc, char **argv, Params &p) {
     if (p.N <= 2 * p.R) { fprintf(stderr, "Blad: wymagane N > 2R (N=%d, R=%d)\n", p.N, p.R); ok = false; }
     if (p.BS != 16 && p.BS != 32) { fprintf(stderr, "Blad: BS musi byc 16 lub 32\n"); ok = false; }
     if (p.reps < 1) { fprintf(stderr, "Blad: reps >= 1\n"); ok = false; }
+    if (p.warmup_ms < 0) { fprintf(stderr, "Blad: warmup >= 0\n"); ok = false; }
     if (p.data != "random" && p.data != "uniform") {
         fprintf(stderr, "Blad: nieznany data '%s'\n", p.data.c_str()); ok = false;
     }
@@ -208,7 +213,11 @@ static void stencilCPU(const float *__restrict tab, float *__restrict out, int N
 }
 
 static TimingStats runCPU(const std::vector<float> &tab, std::vector<float> &out, const Params &p) {
-    stencilCPU(tab.data(), out.data(), p.N, p.R);  // rozgrzewka (page faults, watki OpenMP)
+    // Rozgrzewka (page faults, watki OpenMP, zegar turbo) przez co najmniej p.warmup_ms.
+    const double w0 = omp_get_wtime();
+    do {
+        stencilCPU(tab.data(), out.data(), p.N, p.R);
+    } while ((omp_get_wtime() - w0) * 1e3 < p.warmup_ms);
     std::vector<double> t(p.reps);
     for (int r = 0; r < p.reps; ++r) {
         const double t0 = omp_get_wtime();
@@ -460,9 +469,15 @@ static bool runGPU(int variant, const float *d_in, float *d_out, std::vector<flo
     // 0xFF -> NaN: element niezapisany przez kernel zostanie wykryty przy porownaniu.
     checkCudaErrors(cudaMemset(d_out, 0xFF, outBytes));
 
-    cfg.fn<<<cfg.grid, cfg.block, cfg.smem>>>(d_in, d_out, p.N, p.R);  // rozgrzewka
-    checkCudaErrors(cudaGetLastError());
-    checkCudaErrors(cudaDeviceSynchronize());
+    // Rozgrzewka przez co najmniej p.warmup_ms: GPU (szczegolnie w laptopie) startuje
+    // z niskim zegarem i podnosi go dopiero po ok. 1 s ciaglego obciazenia – bez tego
+    // krotkie serie (male N) bylyby mierzone przy nizszym zegarze niz dlugie.
+    const double w0 = omp_get_wtime();
+    do {
+        cfg.fn<<<cfg.grid, cfg.block, cfg.smem>>>(d_in, d_out, p.N, p.R);
+        checkCudaErrors(cudaGetLastError());
+        checkCudaErrors(cudaDeviceSynchronize());
+    } while ((omp_get_wtime() - w0) * 1e3 < p.warmup_ms);
 
     cudaEvent_t start, stop;
     checkCudaErrors(cudaEventCreate(&start));
